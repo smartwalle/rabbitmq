@@ -31,6 +31,10 @@ func (this *Channel) Close() error {
 	return this.channel.Close()
 }
 
+func (this *Channel) IsClosed() bool {
+	return this.channel.IsClosed()
+}
+
 func (this *Channel) connect() error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
@@ -73,16 +77,46 @@ func (this *Channel) reconnect() {
 	}
 }
 
-func (this *Channel) Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error) {
+func (this *Channel) NotifyClose(c chan *amqp.Error) chan *amqp.Error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
-	return this.channel.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
+	return this.channel.NotifyClose(c)
 }
 
-func (this *Channel) QueueDeclarePassive(name string, durable bool, autoDelete bool, exclusive bool, noWait bool, args amqp.Table) (amqp.Queue, error) {
+func (this *Channel) NotifyFlow(c chan bool) chan bool {
 	this.mu.Lock()
 	defer this.mu.Unlock()
-	return this.channel.QueueDeclarePassive(name, durable, autoDelete, exclusive, noWait, args)
+	return this.channel.NotifyFlow(c)
+}
+
+func (this *Channel) NotifyReturn(c chan amqp.Return) chan amqp.Return {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.NotifyReturn(c)
+}
+
+func (this *Channel) NotifyCancel(c chan string) chan string {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.NotifyCancel(c)
+}
+
+func (this *Channel) NotifyConfirm(ack, nack chan uint64) (chan uint64, chan uint64) {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.NotifyConfirm(ack, nack)
+}
+
+func (this *Channel) NotifyPublish(confirm chan amqp.Confirmation) chan amqp.Confirmation {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.NotifyPublish(confirm)
+}
+
+func (this *Channel) Qos(prefetchCount int, prefetchSize int, global bool) error {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.Qos(prefetchCount, prefetchSize, global)
 }
 
 func (this *Channel) QueueDeclare(name string, durable bool, autoDelete bool, exclusive bool, noWait bool, args amqp.Table) (amqp.Queue, error) {
@@ -91,16 +125,10 @@ func (this *Channel) QueueDeclare(name string, durable bool, autoDelete bool, ex
 	return this.channel.QueueDeclare(name, durable, autoDelete, exclusive, noWait, args)
 }
 
-func (this *Channel) ExchangeDeclarePassive(name string, kind string, durable bool, autoDelete bool, internal bool, noWait bool, args amqp.Table) error {
+func (this *Channel) QueueDeclarePassive(name string, durable bool, autoDelete bool, exclusive bool, noWait bool, args amqp.Table) (amqp.Queue, error) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
-	return this.channel.ExchangeDeclarePassive(name, kind, durable, autoDelete, internal, noWait, args)
-}
-
-func (this *Channel) ExchangeDeclare(name string, kind string, durable bool, autoDelete bool, internal bool, noWait bool, args amqp.Table) error {
-	this.mu.Lock()
-	defer this.mu.Unlock()
-	return this.channel.ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args)
+	return this.channel.QueueDeclarePassive(name, durable, autoDelete, exclusive, noWait, args)
 }
 
 func (this *Channel) QueueBind(name string, key string, exchange string, noWait bool, args amqp.Table) error {
@@ -109,10 +137,58 @@ func (this *Channel) QueueBind(name string, key string, exchange string, noWait 
 	return this.channel.QueueBind(name, key, exchange, noWait, args)
 }
 
-func (this *Channel) Qos(prefetchCount int, prefetchSize int, global bool) error {
+func (this *Channel) QueueUnbind(name, key, exchange string, args amqp.Table) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
-	return this.channel.Qos(prefetchCount, prefetchSize, global)
+	return this.channel.QueueUnbind(name, key, exchange, args)
+}
+
+func (this *Channel) QueuePurge(name string, noWait bool) (int, error) {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.QueuePurge(name, noWait)
+}
+
+func (this *Channel) QueueDelete(name string, ifUnused, ifEmpty, noWait bool) (int, error) {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.QueueDelete(name, ifUnused, ifEmpty, noWait)
+}
+
+func (this *Channel) Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error) {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
+}
+
+func (this *Channel) ExchangeDeclare(name string, kind string, durable bool, autoDelete bool, internal bool, noWait bool, args amqp.Table) error {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args)
+}
+
+func (this *Channel) ExchangeDeclarePassive(name string, kind string, durable bool, autoDelete bool, internal bool, noWait bool, args amqp.Table) error {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.ExchangeDeclarePassive(name, kind, durable, autoDelete, internal, noWait, args)
+}
+
+func (this *Channel) ExchangeDelete(name string, ifUnused, noWait bool) error {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.ExchangeDelete(name, ifUnused, noWait)
+}
+
+func (this *Channel) ExchangeBind(destination, key, source string, noWait bool, args amqp.Table) error {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.ExchangeBind(destination, key, source, noWait, args)
+}
+
+func (this *Channel) ExchangeUnbind(destination, key, source string, noWait bool, args amqp.Table) error {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.ExchangeUnbind(destination, key, source, noWait, args)
 }
 
 func (this *Channel) Publish(exchange string, key string, mandatory bool, immediate bool, msg amqp.Publishing) error {
@@ -127,32 +203,26 @@ func (this *Channel) PublishWithContext(ctx context.Context, exchange string, ke
 	return this.channel.PublishWithContext(ctx, exchange, key, mandatory, immediate, msg)
 }
 
+func (this *Channel) PublishWithDeferredConfirm(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) (*amqp.DeferredConfirmation, error) {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.PublishWithDeferredConfirm(exchange, key, mandatory, immediate, msg)
+}
+
 func (this *Channel) PublishWithDeferredConfirmWithContext(ctx context.Context, exchange string, key string, mandatory bool, immediate bool, msg amqp.Publishing) (*amqp.DeferredConfirmation, error) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 	return this.channel.PublishWithDeferredConfirmWithContext(ctx, exchange, key, mandatory, immediate, msg)
 }
 
-func (this *Channel) NotifyReturn(c chan amqp.Return) chan amqp.Return {
+func (this *Channel) Get(queue string, autoAck bool) (msg amqp.Delivery, ok bool, err error) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
-	return this.channel.NotifyReturn(c)
+	return this.channel.Get(queue, autoAck)
 }
 
 func (this *Channel) Confirm(noWait bool) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 	return this.channel.Confirm(noWait)
-}
-
-func (this *Channel) NotifyPublish(confirm chan amqp.Confirmation) chan amqp.Confirmation {
-	this.mu.Lock()
-	defer this.mu.Unlock()
-	return this.channel.NotifyPublish(confirm)
-}
-
-func (this *Channel) NotifyFlow(c chan bool) chan bool {
-	this.mu.Lock()
-	defer this.mu.Unlock()
-	return this.channel.NotifyFlow(c)
 }

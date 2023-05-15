@@ -34,6 +34,10 @@ func (this *Conn) Close() error {
 	return this.conn.Close()
 }
 
+func (this *Conn) IsClosed() bool {
+	return this.conn.IsClosed()
+}
+
 func (this *Conn) connect() error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
