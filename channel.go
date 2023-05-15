@@ -19,6 +19,10 @@ type Channel struct {
 }
 
 func newChannel(conn *Conn, config Config) (*Channel, error) {
+	if config.ChannelReconnectInterval <= 0 {
+		config.ChannelReconnectInterval = time.Second * 5
+	}
+
 	var nChannel = &Channel{}
 	nChannel.conn = conn
 	nChannel.config = config
@@ -79,7 +83,7 @@ func (this *Channel) handleNotify() {
 
 func (this *Channel) reconnect() {
 	for {
-		time.Sleep(this.config.ReconnectInterval)
+		time.Sleep(this.config.ChannelReconnectInterval)
 		var err = this.connect()
 		if err == nil {
 			this.notifyMu.Lock()

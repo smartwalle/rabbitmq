@@ -7,5 +7,6 @@ import (
 
 type Config struct {
 	amqp.Config
-	ReconnectInterval time.Duration // 重连间隔
+	ConnectionReconnectInterval time.Duration
+	ChannelReconnectInterval    time.Duration
 }

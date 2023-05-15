@@ -18,8 +18,8 @@ type Conn struct {
 }
 
 func NewConn(url string, config Config) (*Conn, error) {
-	if config.ReconnectInterval <= 0 {
-		config.ReconnectInterval = time.Second * 5
+	if config.ConnectionReconnectInterval <= 0 {
+		config.ConnectionReconnectInterval = time.Second * 5
 	}
 
 	var nConn = &Conn{}
@@ -78,7 +78,7 @@ func (this *Conn) handleNotify() {
 
 func (this *Conn) reconnect() {
 	for {
-		time.Sleep(this.config.ReconnectInterval)
+		time.Sleep(this.config.ConnectionReconnectInterval)
 		var err = this.connect()
 		if err == nil {
 			this.notifyMu.Lock()
