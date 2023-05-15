@@ -2,7 +2,6 @@ package rabbitmq
 
 import (
 	"context"
-	"fmt"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"sync"
 	"time"
@@ -57,27 +56,19 @@ func (this *Channel) handleNotify() {
 	select {
 	case err := <-closed:
 		if err != nil {
-			fmt.Println("Channel 断开:", err)
 			this.reconnect()
 		}
-
-	case err := <-cancelled:
-		fmt.Println("Channel Cancelled:", err)
+	case _ = <-cancelled:
 		this.reconnect()
 	}
 }
 
 func (this *Channel) reconnect() {
 	for {
-		fmt.Printf("Channel 将在 %d 后重连\n", this.config.ReconnectInterval)
 		time.Sleep(this.config.ReconnectInterval)
-		fmt.Println("Channel 开始重连...")
 		var err = this.connect()
 		if err == nil {
-			fmt.Println("Channel 连接成功")
 			return
-		} else {
-			fmt.Println("Channel 连接发生错误:", err)
 		}
 	}
 }

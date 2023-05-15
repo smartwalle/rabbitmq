@@ -1,7 +1,6 @@
 package rabbitmq
 
 import (
-	"fmt"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"sync"
 	"time"
@@ -58,7 +57,6 @@ func (this *Conn) handleNotify() {
 	select {
 	case err := <-closed:
 		if err != nil {
-			fmt.Println("Conn 连接断开:", err)
 			this.reconnect()
 		}
 	}
@@ -66,15 +64,10 @@ func (this *Conn) handleNotify() {
 
 func (this *Conn) reconnect() {
 	for {
-		fmt.Printf("Conn 将在 %d 后重连\n", this.config.ReconnectInterval)
 		time.Sleep(this.config.ReconnectInterval)
-		fmt.Println("Conn 开始重连...")
 		var err = this.connect()
 		if err == nil {
-			fmt.Println("Conn 连接成功")
 			return
-		} else {
-			fmt.Println("Conn 连接发生错误:", err)
 		}
 	}
 }
