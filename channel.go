@@ -4,20 +4,18 @@ import (
 	"context"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
 type Channel struct {
-	mu       sync.Mutex
-	notifyMu sync.Mutex
-	conn     *Conn
-	channel  *amqp.Channel
-	config   Config
+	mu      sync.Mutex
+	conn    *Conn
+	channel *amqp.Channel
+	config  Config
 
-	noNotify        bool
-	reconnects      []chan bool
-	reconnectStatus int32 // 0 - 没有重连任务；1 - 有重连任务在进行中；
+	notifyMu   sync.Mutex
+	noNotify   bool
+	reconnects []chan bool
 }
 
 func newChannel(conn *Conn, config Config) (*Channel, error) {
@@ -80,16 +78,10 @@ func (this *Channel) handleNotify() {
 }
 
 func (this *Channel) reconnect() {
-	if !atomic.CompareAndSwapInt32(&this.reconnectStatus, 0, 1) {
-		return
-	}
-
 	for {
 		time.Sleep(this.config.ReconnectInterval)
 		var err = this.connect()
 		if err == nil {
-			atomic.StoreInt32(&this.reconnectStatus, 0)
-
 			this.notifyMu.Lock()
 			for _, c := range this.reconnects {
 				c <- true

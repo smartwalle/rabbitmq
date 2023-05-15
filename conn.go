@@ -11,6 +11,10 @@ type Conn struct {
 	conn   *amqp.Connection
 	url    string
 	config Config
+
+	notifyMu   sync.Mutex
+	noNotify   bool
+	reconnects []chan bool
 }
 
 func NewConn(url string, config Config) (*Conn, error) {
@@ -28,6 +32,13 @@ func NewConn(url string, config Config) (*Conn, error) {
 }
 
 func (this *Conn) Close() error {
+	this.notifyMu.Lock()
+	this.noNotify = true
+	for _, c := range this.reconnects {
+		close(c)
+	}
+	this.notifyMu.Unlock()
+
 	this.mu.Lock()
 	defer this.mu.Unlock()
 	return this.conn.Close()
@@ -70,9 +81,26 @@ func (this *Conn) reconnect() {
 		time.Sleep(this.config.ReconnectInterval)
 		var err = this.connect()
 		if err == nil {
+			this.notifyMu.Lock()
+			for _, c := range this.reconnects {
+				c <- true
+			}
+			this.notifyMu.Unlock()
 			return
 		}
 	}
+}
+
+func (this *Conn) NotifyReconnect(c chan bool) chan bool {
+	this.notifyMu.Lock()
+	defer this.notifyMu.Unlock()
+
+	if this.noNotify {
+		close(c)
+	} else {
+		this.reconnects = append(this.reconnects, c)
+	}
+	return c
 }
 
 func (this *Conn) Channel() (*Channel, error) {
