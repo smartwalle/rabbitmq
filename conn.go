@@ -7,7 +7,7 @@ import (
 )
 
 type Conn struct {
-	mu     *sync.Mutex
+	mu     sync.Mutex
 	conn   *amqp.Connection
 	url    string
 	config Config
@@ -19,7 +19,6 @@ func NewConn(url string, config Config) (*Conn, error) {
 	}
 
 	var nConn = &Conn{}
-	nConn.mu = &sync.Mutex{}
 	nConn.url = url
 	nConn.config = config
 	if err := nConn.connect(); err != nil {

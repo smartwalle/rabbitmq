@@ -4,19 +4,24 @@ import (
 	"context"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type Channel struct {
-	mu      *sync.Mutex
-	conn    *Conn
-	channel *amqp.Channel
-	config  Config
+	mu       sync.Mutex
+	notifyMu sync.Mutex
+	conn     *Conn
+	channel  *amqp.Channel
+	config   Config
+
+	noNotify        bool
+	reconnects      []chan bool
+	reconnectStatus int32 // 0 - 没有重连任务；1 - 有重连任务在进行中；
 }
 
 func newChannel(conn *Conn, config Config) (*Channel, error) {
 	var nChannel = &Channel{}
-	nChannel.mu = &sync.Mutex{}
 	nChannel.conn = conn
 	nChannel.config = config
 	if err := nChannel.connect(); err != nil {
@@ -26,6 +31,13 @@ func newChannel(conn *Conn, config Config) (*Channel, error) {
 }
 
 func (this *Channel) Close() error {
+	this.notifyMu.Lock()
+	this.noNotify = true
+	for _, c := range this.reconnects {
+		close(c)
+	}
+	this.notifyMu.Unlock()
+
 	this.mu.Lock()
 	defer this.mu.Unlock()
 	return this.channel.Close()
@@ -68,13 +80,36 @@ func (this *Channel) handleNotify() {
 }
 
 func (this *Channel) reconnect() {
+	if !atomic.CompareAndSwapInt32(&this.reconnectStatus, 0, 1) {
+		return
+	}
+
 	for {
 		time.Sleep(this.config.ReconnectInterval)
 		var err = this.connect()
 		if err == nil {
+			atomic.StoreInt32(&this.reconnectStatus, 0)
+
+			this.notifyMu.Lock()
+			for _, c := range this.reconnects {
+				c <- true
+			}
+			this.notifyMu.Unlock()
 			return
 		}
 	}
+}
+
+func (this *Channel) NotifyReconnect(c chan bool) chan bool {
+	this.notifyMu.Lock()
+	defer this.notifyMu.Unlock()
+
+	if this.noNotify {
+		close(c)
+	} else {
+		this.reconnects = append(this.reconnects, c)
+	}
+	return c
 }
 
 func (this *Channel) NotifyClose(c chan *amqp.Error) chan *amqp.Error {
