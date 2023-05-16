@@ -127,6 +127,9 @@ func (this *Channel) reconnect(interval time.Duration) {
 	this.mu.Unlock()
 }
 
+// NotifyReconnect 注册重连成功接收者
+//
+// 不同于 Channel 的其它 Notify，本方法在 Channel 重连重连成功之后不用重复注册
 func (this *Channel) NotifyReconnect(c chan bool) chan bool {
 	this.mu.Lock()
 	defer this.mu.Unlock()
@@ -139,36 +142,54 @@ func (this *Channel) NotifyReconnect(c chan bool) chan bool {
 	return c
 }
 
+// NotifyClose
+//
+// Channel 重连成功之后，需要重新注册
 func (this *Channel) NotifyClose(c chan *amqp.Error) chan *amqp.Error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 	return this.channel.NotifyClose(c)
 }
 
+// NotifyFlow
+//
+// Channel 重连成功之后，需要重新注册
 func (this *Channel) NotifyFlow(c chan bool) chan bool {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 	return this.channel.NotifyFlow(c)
 }
 
+// NotifyReturn
+//
+// Channel 重连成功之后，需要重新注册
 func (this *Channel) NotifyReturn(c chan amqp.Return) chan amqp.Return {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 	return this.channel.NotifyReturn(c)
 }
 
+// NotifyCancel
+//
+// Channel 重连成功之后，需要重新注册
 func (this *Channel) NotifyCancel(c chan string) chan string {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 	return this.channel.NotifyCancel(c)
 }
 
+// NotifyConfirm
+//
+// Channel 重连成功之后，需要重新注册
 func (this *Channel) NotifyConfirm(ack, nack chan uint64) (chan uint64, chan uint64) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 	return this.channel.NotifyConfirm(ack, nack)
 }
 
+// NotifyPublish
+//
+// Channel 重连成功之后，需要重新注册
 func (this *Channel) NotifyPublish(confirm chan amqp.Confirmation) chan amqp.Confirmation {
 	this.mu.Lock()
 	defer this.mu.Unlock()
