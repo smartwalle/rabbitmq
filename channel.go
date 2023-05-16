@@ -180,6 +180,12 @@ func (this *Channel) Qos(prefetchCount int, prefetchSize int, global bool) error
 	return this.channel.Qos(prefetchCount, prefetchSize, global)
 }
 
+func (this *Channel) Cancel(consumer string, noWait bool) error {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.Cancel(consumer, noWait)
+}
+
 func (this *Channel) QueueDeclare(name string, durable bool, autoDelete bool, exclusive bool, noWait bool, args amqp.Table) (amqp.Queue, error) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
@@ -282,8 +288,48 @@ func (this *Channel) Get(queue string, autoAck bool) (msg amqp.Delivery, ok bool
 	return this.channel.Get(queue, autoAck)
 }
 
+func (this *Channel) Tx() error {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.Tx()
+}
+
+func (this *Channel) TxCommit() error {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.TxCommit()
+}
+
+func (this *Channel) TxRollback() error {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.TxRollback()
+}
+
+func (this *Channel) Flow(active bool) error {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.channel.Flow(active)
+}
+
 func (this *Channel) Confirm(noWait bool) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 	return this.channel.Confirm(noWait)
+}
+
+func (this *Channel) Ack(tag uint64, multiple bool) error {
+	return this.channel.Ack(tag, multiple)
+}
+
+func (this *Channel) Nack(tag uint64, multiple bool, requeue bool) error {
+	return this.channel.Nack(tag, multiple, requeue)
+}
+
+func (this *Channel) Reject(tag uint64, requeue bool) error {
+	return this.channel.Reject(tag, requeue)
+}
+
+func (this *Channel) GetNextPublishSeqNo() uint64 {
+	return this.channel.GetNextPublishSeqNo()
 }
