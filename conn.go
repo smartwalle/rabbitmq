@@ -42,6 +42,7 @@ func (this *Conn) Close() error {
 	for _, c := range this.reconnects {
 		close(c)
 	}
+	this.reconnects = nil
 
 	return this.conn.Close()
 }

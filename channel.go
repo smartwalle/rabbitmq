@@ -40,6 +40,7 @@ func (this *Channel) Close() error {
 	for _, c := range this.reconnects {
 		close(c)
 	}
+	this.reconnects = nil
 
 	return this.channel.Close()
 }
