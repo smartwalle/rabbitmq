@@ -2,6 +2,7 @@ package rabbitmq
 
 import (
 	"context"
+	"fmt"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"sync"
 	"time"
@@ -83,6 +84,7 @@ func (this *Channel) handleNotify() {
 
 	select {
 	case err := <-closed:
+		fmt.Println("ssss", err)
 		if err != nil {
 			this.reconnect(this.config.ReconnectInterval)
 		}
@@ -316,7 +318,7 @@ func (this *Channel) ExchangeUnbind(destination, key, source string, noWait bool
 //
 // mandatory - 如果为 true，根据自身 exchange 类型和 route key 规则无法找到符合条件的队列会把消息返还给发送者
 //
-// immediate - 如果为 true，当 exchange 发送消息到队列后发现队列上没有消费者，则会把消息返还给发送者
+// immediate - 如果为 true，当 exchange 发送消息到队列后发现队列上没有消费者，则会把消息返还给发送者，在 RabbitMQ 3.0以后的版本里，去掉了immediate参数的支持
 //
 // msg - 消息内容
 func (this *Channel) Publish(exchange string, key string, mandatory bool, immediate bool, msg amqp.Publishing) error {
