@@ -7,19 +7,18 @@ import (
 )
 
 type Conn struct {
-	mu     sync.Mutex
-	conn   *amqp.Connection
-	url    string
-	config Config
-
-	notifyMu   sync.Mutex
-	noNotify   bool
+	mu         sync.Mutex
+	conn       *amqp.Connection
+	url        string
+	config     Config
+	closed     bool
 	reconnects []chan bool
+	timer      *time.Timer
 }
 
 func NewConn(url string, config Config) (*Conn, error) {
-	if config.ConnectionReconnectInterval <= 0 {
-		config.ConnectionReconnectInterval = time.Second * 5
+	if config.ReconnectInterval <= 0 {
+		config.ReconnectInterval = time.Second * 5
 	}
 
 	var nConn = &Conn{}
@@ -32,15 +31,18 @@ func NewConn(url string, config Config) (*Conn, error) {
 }
 
 func (this *Conn) Close() error {
-	this.notifyMu.Lock()
-	this.noNotify = true
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	this.closed = true
+	if this.timer != nil {
+		this.timer.Stop()
+		this.timer = nil
+	}
 	for _, c := range this.reconnects {
 		close(c)
 	}
-	this.notifyMu.Unlock()
 
-	this.mu.Lock()
-	defer this.mu.Unlock()
 	return this.conn.Close()
 }
 
@@ -48,11 +50,18 @@ func (this *Conn) IsClosed() bool {
 	return this.conn.IsClosed()
 }
 
-func (this *Conn) connect() error {
-	this.mu.Lock()
-	defer this.mu.Unlock()
+func (this *Conn) handleNotify() {
+	var closed = this.conn.NotifyClose(make(chan *amqp.Error, 1))
+	select {
+	case err := <-closed:
+		if err != nil {
+			this.reconnect(this.config.ReconnectInterval)
+		}
+	}
+}
 
-	conn, err := amqp.DialConfig(this.url, this.config.Config)
+func (this *Conn) connect() error {
+	var conn, err = amqp.DialConfig(this.url, this.config.Config)
 	if err != nil {
 		return err
 	}
@@ -66,36 +75,47 @@ func (this *Conn) connect() error {
 	return nil
 }
 
-func (this *Conn) handleNotify() {
-	var closed = this.conn.NotifyClose(make(chan *amqp.Error, 1))
-	select {
-	case err := <-closed:
-		if err != nil {
-			this.reconnect()
-		}
+func (this *Conn) reconnect(interval time.Duration) {
+	this.mu.Lock()
+	if this.closed {
+		this.mu.Unlock()
+		return
 	}
-}
 
-func (this *Conn) reconnect() {
-	for {
-		time.Sleep(this.config.ConnectionReconnectInterval)
-		var err = this.connect()
-		if err == nil {
-			this.notifyMu.Lock()
-			for _, c := range this.reconnects {
-				c <- true
-			}
-			this.notifyMu.Unlock()
+	if this.timer != nil {
+		this.timer.Stop()
+	}
+
+	this.timer = time.AfterFunc(interval, func() {
+		this.mu.Lock()
+		if this.closed {
+			this.mu.Unlock()
 			return
 		}
-	}
+
+		var err = this.connect()
+		if err != nil {
+			this.mu.Unlock()
+			this.reconnect(interval)
+			return
+		}
+
+		this.timer.Stop()
+		this.timer = nil
+
+		for _, c := range this.reconnects {
+			c <- true
+		}
+		this.mu.Unlock()
+	})
+	this.mu.Unlock()
 }
 
 func (this *Conn) NotifyReconnect(c chan bool) chan bool {
-	this.notifyMu.Lock()
-	defer this.notifyMu.Unlock()
+	this.mu.Lock()
+	defer this.mu.Unlock()
 
-	if this.noNotify {
+	if this.closed {
 		close(c)
 	} else {
 		this.reconnects = append(this.reconnects, c)
