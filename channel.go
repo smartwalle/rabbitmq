@@ -334,7 +334,7 @@ func (this *Channel) PublishWithContext(ctx context.Context, exchange string, ke
 func (this *Channel) PublishWithDeferredConfirm(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) (*amqp.DeferredConfirmation, error) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
-	return this.PublishWithDeferredConfirm(exchange, key, mandatory, immediate, msg)
+	return this.channel.PublishWithDeferredConfirmWithContext(context.Background(), exchange, key, mandatory, immediate, msg)
 }
 
 func (this *Channel) PublishWithDeferredConfirmWithContext(ctx context.Context, exchange string, key string, mandatory bool, immediate bool, msg amqp.Publishing) (*amqp.DeferredConfirmation, error) {
