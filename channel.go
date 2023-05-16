@@ -186,6 +186,13 @@ func (this *Channel) Cancel(consumer string, noWait bool) error {
 	return this.channel.Cancel(consumer, noWait)
 }
 
+// QueueDeclare
+// name - 队列名称
+// durable - 是否持久化
+// autoDelete - 是否自动删除
+// exclusive - 是否独占
+// noWait - 是否阻塞
+// args - 其它参数
 func (this *Channel) QueueDeclare(name string, durable bool, autoDelete bool, exclusive bool, noWait bool, args amqp.Table) (amqp.Queue, error) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
@@ -222,6 +229,14 @@ func (this *Channel) QueueDelete(name string, ifUnused, ifEmpty, noWait bool) (i
 	return this.channel.QueueDelete(name, ifUnused, ifEmpty, noWait)
 }
 
+// Consume
+// queue - 队列名称
+// consumer - 消费者名称
+// autoAck - 是否自动应答
+// exclusive - 是否独占
+// noLocal - 设置为 true，表示不能将同一个 Connection 中生产者发送的消息传递给这个 Connection 中的消费者
+// noWait - 是否阻塞
+// args - 其它参数
 func (this *Channel) Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
@@ -258,6 +273,12 @@ func (this *Channel) ExchangeUnbind(destination, key, source string, noWait bool
 	return this.channel.ExchangeUnbind(destination, key, source, noWait, args)
 }
 
+// Publish
+// exchange - 交换机名称
+// key - Key
+// mandatory - 如果为 true，根据自身 exchange 类型和 route key 规则无法找到符合条件的队列会把消息返还给发送者
+// immediate - 如果为 true，当 exchange 发送消息到队列后发现队列上没有消费者，则会把消息返还给发送者
+// msg - 消息内容
 func (this *Channel) Publish(exchange string, key string, mandatory bool, immediate bool, msg amqp.Publishing) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
