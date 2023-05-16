@@ -2,7 +2,6 @@ package rabbitmq
 
 import (
 	"context"
-	"fmt"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"sync"
 	"time"
@@ -84,7 +83,6 @@ func (this *Channel) handleNotify() {
 
 	select {
 	case err := <-closed:
-		fmt.Println("ssss", err)
 		if err != nil {
 			this.reconnect(this.config.ReconnectInterval)
 		}
