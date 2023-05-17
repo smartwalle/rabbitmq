@@ -16,6 +16,7 @@ type Channel struct {
 	timer             *time.Timer
 
 	confirmOpts confirmOptions
+	flowOptions flowOptions
 
 	onReconnectHandler func(*Channel)
 	onCloseHandler     func(*amqp.Error)
@@ -28,6 +29,10 @@ type Channel struct {
 type confirmOptions struct {
 	confirming bool
 	noWait     bool
+}
+
+type flowOptions struct {
+	active bool
 }
 
 func newChannel(conn *Connection, reconnectInterval time.Duration) (*Channel, error) {
@@ -159,6 +164,10 @@ func (this *Channel) reconnect(interval time.Duration) {
 
 		if this.confirmOpts.confirming {
 			this.channel.Confirm(this.confirmOpts.noWait)
+		}
+
+		if this.flowOptions.active {
+			this.channel.Flow(this.flowOptions.active)
 		}
 
 		this.mu.Unlock()
@@ -364,6 +373,11 @@ func (this *Channel) TxRollback() error {
 func (this *Channel) Flow(active bool) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
+
+	this.flowOptions = flowOptions{
+		active: active,
+	}
+
 	return this.channel.Flow(active)
 }
 
