@@ -128,5 +128,5 @@ func (this *Conn) Channel() (*Channel, error) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
-	return newChannel(this, this.config)
+	return newChannel(this, this.config.ReconnectInterval)
 }

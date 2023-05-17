@@ -8,19 +8,19 @@ import (
 )
 
 type Channel struct {
-	mu         sync.Mutex
-	conn       *Conn
-	channel    *amqp.Channel
-	config     Config
-	closed     bool
-	reconnects []chan bool
-	timer      *time.Timer
+	mu                sync.Mutex
+	conn              *Conn
+	channel           *amqp.Channel
+	closed            bool
+	reconnectInterval time.Duration
+	reconnects        []chan bool
+	timer             *time.Timer
 }
 
-func newChannel(conn *Conn, config Config) (*Channel, error) {
+func newChannel(conn *Conn, reconnectInterval time.Duration) (*Channel, error) {
 	var nChannel = &Channel{}
 	nChannel.conn = conn
-	nChannel.config = config
+	nChannel.reconnectInterval = reconnectInterval
 	if err := nChannel.connect(); err != nil {
 		return nil, err
 	}
@@ -84,10 +84,10 @@ func (this *Channel) handleNotify() {
 	select {
 	case err := <-closed:
 		if err != nil {
-			this.reconnect(this.config.ReconnectInterval)
+			this.reconnect(this.reconnectInterval)
 		}
 	case _ = <-cancelled:
-		this.reconnect(this.config.ReconnectInterval)
+		this.reconnect(this.reconnectInterval)
 	}
 }
 
