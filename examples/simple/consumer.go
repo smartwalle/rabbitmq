@@ -13,6 +13,7 @@ func main() {
 		return
 	}
 	fmt.Println("连接 RabbitMQ 成功")
+	defer conn.Close()
 
 	channel, err := conn.Channel()
 	if err != nil {
@@ -20,6 +21,7 @@ func main() {
 		return
 	}
 	fmt.Println("创建 Channel 成功")
+	defer channel.Close()
 
 	queue, err := channel.QueueDeclare(
 		"simple-queue", // name of the queue

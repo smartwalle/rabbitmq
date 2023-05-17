@@ -14,6 +14,15 @@ func main() {
 		return
 	}
 	fmt.Println("连接 RabbitMQ 成功")
+	defer conn.Close()
+
+	conn.OnClose(func(err *amqp.Error) {
+		fmt.Println("Conn OnClose:", err)
+	})
+
+	conn.OnReconnect(func(conn *rabbitmq.Connection) {
+		fmt.Println("Conn OnReconnect:", time.Now().Unix())
+	})
 
 	channel, err := conn.Channel()
 	if err != nil {
@@ -21,6 +30,7 @@ func main() {
 		return
 	}
 	fmt.Println("创建 Channel 成功")
+	defer channel.Close()
 
 	queue, err := channel.QueueDeclare(
 		"simple-queue", // name of the queue
@@ -36,34 +46,16 @@ func main() {
 	}
 	fmt.Println("创建队列成功")
 
+	channel.OnReconnect(func(channel *rabbitmq.Channel) {
+		fmt.Println("Channel OnReconnect:", time.Now().Unix())
+		go consume(channel, queue)
+	})
+
+	channel.OnClose(func(err *amqp.Error) {
+		fmt.Println("Channel OnClose:", err)
+	})
+
 	go consume(channel, queue)
-
-	go func() {
-		var reconnect = channel.NotifyReconnect(make(chan bool, 1))
-		for {
-			select {
-			case _, ok := <-reconnect:
-				if !ok {
-					return
-				}
-				fmt.Println("Channel 重连成功:", time.Now().Unix())
-				go consume(channel, queue)
-			}
-		}
-	}()
-
-	go func() {
-		var reconnect = conn.NotifyReconnect(make(chan bool, 1))
-		for {
-			select {
-			case _, ok := <-reconnect:
-				if !ok {
-					return
-				}
-				fmt.Println("Connection 重连成功:", time.Now().Unix())
-			}
-		}
-	}()
 
 	select {}
 }

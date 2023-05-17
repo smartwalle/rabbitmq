@@ -1,12 +1,14 @@
 package rabbitmq
 
 import (
+	"crypto/tls"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"net"
 	"sync"
 	"time"
 )
 
-type Conn struct {
+type Connection struct {
 	mu         sync.Mutex
 	conn       *amqp.Connection
 	url        string
@@ -14,14 +16,24 @@ type Conn struct {
 	closed     bool
 	reconnects []chan bool
 	timer      *time.Timer
+
+	secretOpts secretOptions
+
+	onReconnectHandler func(*Connection)
+	onCloseHandler     func(*amqp.Error)
 }
 
-func NewConn(url string, config Config) (*Conn, error) {
+type secretOptions struct {
+	secret string
+	reason string
+}
+
+func NewConn(url string, config Config) (*Connection, error) {
 	if config.ReconnectInterval <= 0 {
 		config.ReconnectInterval = time.Second * 5
 	}
 
-	var nConn = &Conn{}
+	var nConn = &Connection{}
 	nConn.url = url
 	nConn.config = config
 	if err := nConn.connect(); err != nil {
@@ -30,7 +42,31 @@ func NewConn(url string, config Config) (*Conn, error) {
 	return nConn, nil
 }
 
-func (this *Conn) Close() error {
+func (this *Connection) UpdateSecret(newSecret, reason string) error {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+
+	this.secretOpts = secretOptions{
+		secret: newSecret,
+		reason: reason,
+	}
+
+	return this.conn.UpdateSecret(newSecret, reason)
+}
+
+func (this *Connection) LocalAddr() net.Addr {
+	return this.conn.LocalAddr()
+}
+
+func (this *Connection) RemoteAddr() net.Addr {
+	return this.conn.RemoteAddr()
+}
+
+func (this *Connection) ConnectionState() tls.ConnectionState {
+	return this.conn.ConnectionState()
+}
+
+func (this *Connection) Close() error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
@@ -47,21 +83,24 @@ func (this *Conn) Close() error {
 	return this.conn.Close()
 }
 
-func (this *Conn) IsClosed() bool {
+func (this *Connection) IsClosed() bool {
 	return this.conn.IsClosed()
 }
 
-func (this *Conn) handleNotify() {
+func (this *Connection) handleNotify() {
 	var closed = this.conn.NotifyClose(make(chan *amqp.Error, 1))
 	select {
 	case err := <-closed:
+		if this.onCloseHandler != nil {
+			this.onCloseHandler(err)
+		}
 		if err != nil {
 			this.reconnect(this.config.ReconnectInterval)
 		}
 	}
 }
 
-func (this *Conn) connect() error {
+func (this *Connection) connect() error {
 	var conn, err = amqp.DialConfig(this.url, this.config.Config)
 	if err != nil {
 		return err
@@ -76,7 +115,7 @@ func (this *Conn) connect() error {
 	return nil
 }
 
-func (this *Conn) reconnect(interval time.Duration) {
+func (this *Connection) reconnect(interval time.Duration) {
 	this.mu.Lock()
 	if this.closed {
 		this.mu.Unlock()
@@ -107,12 +146,21 @@ func (this *Conn) reconnect(interval time.Duration) {
 		for _, c := range this.reconnects {
 			c <- true
 		}
+
+		if this.onReconnectHandler != nil {
+			this.onReconnectHandler(this)
+		}
+
+		if this.secretOpts.secret != "" {
+			this.conn.UpdateSecret(this.secretOpts.secret, this.secretOpts.reason)
+		}
+
 		this.mu.Unlock()
 	})
 	this.mu.Unlock()
 }
 
-func (this *Conn) NotifyReconnect(c chan bool) chan bool {
+func (this *Connection) notifyReconnect(c chan bool) chan bool {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
@@ -124,7 +172,15 @@ func (this *Conn) NotifyReconnect(c chan bool) chan bool {
 	return c
 }
 
-func (this *Conn) Channel() (*Channel, error) {
+func (this *Connection) OnReconnect(handler func(conn *Connection)) {
+	this.onReconnectHandler = handler
+}
+
+func (this *Connection) OnClose(handler func(err *amqp.Error)) {
+	this.onCloseHandler = handler
+}
+
+func (this *Connection) Channel() (*Channel, error) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 

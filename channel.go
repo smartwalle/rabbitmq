@@ -9,15 +9,28 @@ import (
 
 type Channel struct {
 	mu                sync.Mutex
-	conn              *Conn
+	conn              *Connection
 	channel           *amqp.Channel
 	closed            bool
 	reconnectInterval time.Duration
-	reconnects        []chan bool
 	timer             *time.Timer
+
+	confirmOpts confirmOptions
+
+	onReconnectHandler func(*Channel)
+	onCloseHandler     func(*amqp.Error)
+	onFlowHandler      func(bool)
+	onReturnHandler    func(amqp.Return)
+	onCancelHandler    func(string)
+	onPublishHandler   func(amqp.Confirmation)
 }
 
-func newChannel(conn *Conn, reconnectInterval time.Duration) (*Channel, error) {
+type confirmOptions struct {
+	confirming bool
+	noWait     bool
+}
+
+func newChannel(conn *Connection, reconnectInterval time.Duration) (*Channel, error) {
 	var nChannel = &Channel{}
 	nChannel.conn = conn
 	nChannel.reconnectInterval = reconnectInterval
@@ -37,10 +50,6 @@ func (this *Channel) Close() error {
 		this.timer.Stop()
 		this.timer = nil
 	}
-	for _, c := range this.reconnects {
-		close(c)
-	}
-	this.reconnects = nil
 
 	return this.channel.Close()
 }
@@ -50,7 +59,7 @@ func (this *Channel) IsClosed() bool {
 }
 
 func (this *Channel) handleConnReconnect() {
-	var connected = this.conn.NotifyReconnect(make(chan bool, 1))
+	var connected = this.conn.notifyReconnect(make(chan bool, 1))
 	for {
 		select {
 		case _, ok := <-connected:
@@ -78,16 +87,41 @@ func (this *Channel) connect() error {
 }
 
 func (this *Channel) handleNotify() {
-	var closed = this.channel.NotifyClose(make(chan *amqp.Error, 1))
-	var cancelled = this.channel.NotifyCancel(make(chan string, 1))
+	var closes = this.channel.NotifyClose(make(chan *amqp.Error, 1))
+	var cancels = this.channel.NotifyCancel(make(chan string, 1))
+	var flows = this.channel.NotifyFlow(make(chan bool, 1))
+	var confirms = this.channel.NotifyPublish(make(chan amqp.Confirmation, 1))
+	var returns = this.channel.NotifyReturn(make(chan amqp.Return, 1))
 
-	select {
-	case err := <-closed:
-		if err != nil {
+	for {
+		select {
+		case err := <-closes:
+			if this.onCloseHandler != nil {
+				this.onCloseHandler(err)
+			}
+			if err != nil {
+				this.reconnect(this.reconnectInterval)
+			}
+			return
+		case c := <-cancels:
+			if this.onCancelHandler != nil {
+				this.onCancelHandler(c)
+			}
 			this.reconnect(this.reconnectInterval)
+			return
+		case c := <-flows:
+			if this.onFlowHandler != nil {
+				this.onFlowHandler(c)
+			}
+		case c := <-confirms:
+			if this.onPublishHandler != nil {
+				this.onPublishHandler(c)
+			}
+		case r := <-returns:
+			if this.onReturnHandler != nil {
+				this.onReturnHandler(r)
+			}
 		}
-	case _ = <-cancelled:
-		this.reconnect(this.reconnectInterval)
 	}
 }
 
@@ -119,81 +153,41 @@ func (this *Channel) reconnect(interval time.Duration) {
 		this.timer.Stop()
 		this.timer = nil
 
-		for _, c := range this.reconnects {
-			c <- true
+		if this.onReconnectHandler != nil {
+			this.onReconnectHandler(this)
 		}
+
+		if this.confirmOpts.confirming {
+			this.channel.Confirm(this.confirmOpts.noWait)
+		}
+
 		this.mu.Unlock()
 	})
 	this.mu.Unlock()
 }
 
-// NotifyReconnect 注册重连成功接收者
-//
-// 不同于 Channel 的其它 Notify，本方法在 Channel 重连重连成功之后不用重复注册
-func (this *Channel) NotifyReconnect(c chan bool) chan bool {
-	this.mu.Lock()
-	defer this.mu.Unlock()
-
-	if this.closed {
-		close(c)
-	} else {
-		this.reconnects = append(this.reconnects, c)
-	}
-	return c
+func (this *Channel) OnReconnect(handler func(channel *Channel)) {
+	this.onReconnectHandler = handler
 }
 
-// NotifyClose
-//
-// Channel 重连成功之后，需要重新注册
-func (this *Channel) NotifyClose(c chan *amqp.Error) chan *amqp.Error {
-	this.mu.Lock()
-	defer this.mu.Unlock()
-	return this.channel.NotifyClose(c)
+func (this *Channel) OnClose(handler func(err *amqp.Error)) {
+	this.onCloseHandler = handler
 }
 
-// NotifyFlow
-//
-// Channel 重连成功之后，需要重新注册
-func (this *Channel) NotifyFlow(c chan bool) chan bool {
-	this.mu.Lock()
-	defer this.mu.Unlock()
-	return this.channel.NotifyFlow(c)
+func (this *Channel) OnCancel(handler func(c string)) {
+	this.onCancelHandler = handler
 }
 
-// NotifyReturn
-//
-// Channel 重连成功之后，需要重新注册
-func (this *Channel) NotifyReturn(c chan amqp.Return) chan amqp.Return {
-	this.mu.Lock()
-	defer this.mu.Unlock()
-	return this.channel.NotifyReturn(c)
+func (this *Channel) OnFlow(handler func(c bool)) {
+	this.onFlowHandler = handler
 }
 
-// NotifyCancel
-//
-// Channel 重连成功之后，需要重新注册
-func (this *Channel) NotifyCancel(c chan string) chan string {
-	this.mu.Lock()
-	defer this.mu.Unlock()
-	return this.channel.NotifyCancel(c)
+func (this *Channel) OnReturn(handler func(r amqp.Return)) {
+	this.onReturnHandler = handler
 }
 
-// NotifyConfirm
-//
-// Channel 重连成功之后，需要重新注册
-func (this *Channel) NotifyConfirm(ack, nack chan uint64) (chan uint64, chan uint64) {
-	this.mu.Lock()
-	defer this.mu.Unlock()
-	return this.channel.NotifyConfirm(ack, nack)
-}
-
-// NotifyPublish
-//
-// Channel 重连成功之后，需要重新注册
-func (this *Channel) NotifyPublish(confirm chan amqp.Confirmation) chan amqp.Confirmation {
-	this.mu.Lock()
-	defer this.mu.Unlock()
-	return this.channel.NotifyPublish(confirm)
+func (this *Channel) OnPublish(handler func(c amqp.Confirmation)) {
+	this.onPublishHandler = handler
 }
 
 func (this *Channel) Qos(prefetchCount int, prefetchSize int, global bool) error {
@@ -376,6 +370,12 @@ func (this *Channel) Flow(active bool) error {
 func (this *Channel) Confirm(noWait bool) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
+
+	this.confirmOpts = confirmOptions{
+		confirming: true,
+		noWait:     noWait,
+	}
+
 	return this.channel.Confirm(noWait)
 }
 
