@@ -18,12 +18,12 @@ type Channel struct {
 	confirmOpts confirmOptions
 	flowOptions flowOptions
 
-	onReconnectHandler func(*Channel)
-	onCloseHandler     func(*amqp.Error)
-	onFlowHandler      func(bool)
-	onReturnHandler    func(amqp.Return)
-	onCancelHandler    func(string)
-	onPublishHandler   func(amqp.Confirmation)
+	onReconnect func(*Channel)
+	onClose     func(*amqp.Error)
+	onFlow      func(bool)
+	onReturn    func(amqp.Return)
+	onCancel    func(string)
+	onPublish   func(amqp.Confirmation)
 }
 
 type confirmOptions struct {
@@ -101,30 +101,30 @@ func (this *Channel) handleNotify() {
 	for {
 		select {
 		case err := <-closes:
-			if this.onCloseHandler != nil {
-				this.onCloseHandler(err)
+			if this.onClose != nil {
+				this.onClose(err)
 			}
 			if err != nil {
 				this.reconnect(this.reconnectInterval)
 			}
 			return
 		case c := <-cancels:
-			if this.onCancelHandler != nil {
-				this.onCancelHandler(c)
+			if this.onCancel != nil {
+				this.onCancel(c)
 			}
 			this.reconnect(this.reconnectInterval)
 			return
 		case c := <-flows:
-			if this.onFlowHandler != nil {
-				this.onFlowHandler(c)
+			if this.onFlow != nil {
+				this.onFlow(c)
 			}
 		case c := <-confirms:
-			if this.onPublishHandler != nil {
-				this.onPublishHandler(c)
+			if this.onPublish != nil {
+				this.onPublish(c)
 			}
 		case r := <-returns:
-			if this.onReturnHandler != nil {
-				this.onReturnHandler(r)
+			if this.onReturn != nil {
+				this.onReturn(r)
 			}
 		}
 	}
@@ -158,8 +158,8 @@ func (this *Channel) reconnect(interval time.Duration) {
 		this.timer.Stop()
 		this.timer = nil
 
-		if this.onReconnectHandler != nil {
-			this.onReconnectHandler(this)
+		if this.onReconnect != nil {
+			this.onReconnect(this)
 		}
 
 		if this.confirmOpts.confirming {
@@ -176,27 +176,27 @@ func (this *Channel) reconnect(interval time.Duration) {
 }
 
 func (this *Channel) OnReconnect(handler func(channel *Channel)) {
-	this.onReconnectHandler = handler
+	this.onReconnect = handler
 }
 
 func (this *Channel) OnClose(handler func(err *amqp.Error)) {
-	this.onCloseHandler = handler
+	this.onClose = handler
 }
 
 func (this *Channel) OnCancel(handler func(c string)) {
-	this.onCancelHandler = handler
+	this.onCancel = handler
 }
 
 func (this *Channel) OnFlow(handler func(c bool)) {
-	this.onFlowHandler = handler
+	this.onFlow = handler
 }
 
 func (this *Channel) OnReturn(handler func(r amqp.Return)) {
-	this.onReturnHandler = handler
+	this.onReturn = handler
 }
 
 func (this *Channel) OnPublish(handler func(c amqp.Confirmation)) {
-	this.onPublishHandler = handler
+	this.onPublish = handler
 }
 
 func (this *Channel) Qos(prefetchCount int, prefetchSize int, global bool) error {

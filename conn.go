@@ -19,8 +19,8 @@ type Connection struct {
 
 	secretOpts secretOptions
 
-	onReconnectHandler func(*Connection)
-	onCloseHandler     func(*amqp.Error)
+	onReconnect func(*Connection)
+	onClose     func(*amqp.Error)
 }
 
 type secretOptions struct {
@@ -91,8 +91,8 @@ func (this *Connection) handleNotify() {
 	var closed = this.conn.NotifyClose(make(chan *amqp.Error, 1))
 	select {
 	case err := <-closed:
-		if this.onCloseHandler != nil {
-			this.onCloseHandler(err)
+		if this.onClose != nil {
+			this.onClose(err)
 		}
 		if err != nil {
 			this.reconnect(this.config.ReconnectInterval)
@@ -147,8 +147,8 @@ func (this *Connection) reconnect(interval time.Duration) {
 			c <- true
 		}
 
-		if this.onReconnectHandler != nil {
-			this.onReconnectHandler(this)
+		if this.onReconnect != nil {
+			this.onReconnect(this)
 		}
 
 		if this.secretOpts.secret != "" {
@@ -173,11 +173,11 @@ func (this *Connection) notifyReconnect(c chan bool) chan bool {
 }
 
 func (this *Connection) OnReconnect(handler func(conn *Connection)) {
-	this.onReconnectHandler = handler
+	this.onReconnect = handler
 }
 
 func (this *Connection) OnClose(handler func(err *amqp.Error)) {
-	this.onCloseHandler = handler
+	this.onClose = handler
 }
 
 func (this *Connection) Channel() (*Channel, error) {
