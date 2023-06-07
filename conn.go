@@ -9,23 +9,26 @@ import (
 )
 
 type Connection struct {
-	mu         sync.Mutex
-	conn       *amqp.Connection
-	url        string
-	config     Config
-	closed     bool
-	reconnects []chan bool
-	timer      *time.Timer
+	mu     sync.Mutex
+	conn   *amqp.Connection
+	url    string
+	config Config
+	closed bool
+	timer  *time.Timer
 
-	secretOpts secretOptions
+	reconnects       []chan bool
+	reconnectOptions map[int]reconnectOption
 
 	onReconnect func(*Connection)
 	onClose     func(*amqp.Error)
 }
 
-type secretOptions struct {
-	secret string
-	reason string
+type reconnectOption func(conn *amqp.Connection)
+
+func withSecret(secret, reason string) reconnectOption {
+	return func(conn *amqp.Connection) {
+		conn.UpdateSecret(secret, reason)
+	}
 }
 
 func NewConn(url string, config Config) (*Connection, error) {
@@ -46,10 +49,7 @@ func (this *Connection) UpdateSecret(newSecret, reason string) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
-	this.secretOpts = secretOptions{
-		secret: newSecret,
-		reason: reason,
-	}
+	this.addReconnectOptions(1, withSecret(newSecret, reason))
 
 	return this.conn.UpdateSecret(newSecret, reason)
 }
@@ -72,13 +72,19 @@ func (this *Connection) Close() error {
 
 	this.closed = true
 	if this.timer != nil {
-		this.timer.Stop()
+		if !this.timer.Stop() {
+			select {
+			case <-this.timer.C:
+			default:
+			}
+		}
 		this.timer = nil
 	}
 	for _, c := range this.reconnects {
 		close(c)
 	}
 	this.reconnects = nil
+	this.reconnectOptions = nil
 
 	return this.conn.Close()
 }
@@ -123,7 +129,12 @@ func (this *Connection) reconnect(interval time.Duration) {
 	}
 
 	if this.timer != nil {
-		this.timer.Stop()
+		if !this.timer.Stop() {
+			select {
+			case <-this.timer.C:
+			default:
+			}
+		}
 	}
 
 	this.timer = time.AfterFunc(interval, func() {
@@ -140,7 +151,12 @@ func (this *Connection) reconnect(interval time.Duration) {
 			return
 		}
 
-		this.timer.Stop()
+		if !this.timer.Stop() {
+			select {
+			case <-this.timer.C:
+			default:
+			}
+		}
 		this.timer = nil
 
 		for _, c := range this.reconnects {
@@ -151,8 +167,10 @@ func (this *Connection) reconnect(interval time.Duration) {
 			this.onReconnect(this)
 		}
 
-		if this.secretOpts.secret != "" {
-			this.conn.UpdateSecret(this.secretOpts.secret, this.secretOpts.reason)
+		for _, opt := range this.reconnectOptions {
+			if opt != nil {
+				opt(this.conn)
+			}
 		}
 
 		this.mu.Unlock()
@@ -170,6 +188,16 @@ func (this *Connection) notifyReconnect(c chan bool) chan bool {
 		this.reconnects = append(this.reconnects, c)
 	}
 	return c
+}
+
+func (this *Connection) addReconnectOptions(key int, fn reconnectOption) {
+	if fn == nil {
+		return
+	}
+	if this.reconnectOptions == nil {
+		this.reconnectOptions = make(map[int]reconnectOption)
+	}
+	this.reconnectOptions[key] = fn
 }
 
 func (this *Connection) OnReconnect(handler func(conn *Connection)) {

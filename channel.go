@@ -15,8 +15,7 @@ type Channel struct {
 	reconnectInterval time.Duration
 	timer             *time.Timer
 
-	confirmOpts confirmOptions
-	flowOptions flowOptions
+	reconnectOptions map[int]channelReconnectOption
 
 	onReconnect func(*Channel)
 	onClose     func(*amqp.Error)
@@ -26,13 +25,24 @@ type Channel struct {
 	onPublish   func(amqp.Confirmation)
 }
 
-type confirmOptions struct {
-	confirming bool
-	noWait     bool
+type channelReconnectOption func(channel *amqp.Channel)
+
+func withConfirm(noWait bool) channelReconnectOption {
+	return func(channel *amqp.Channel) {
+		channel.Confirm(noWait)
+	}
 }
 
-type flowOptions struct {
-	active bool
+func withFlow(active bool) channelReconnectOption {
+	return func(channel *amqp.Channel) {
+		channel.Flow(active)
+	}
+}
+
+func withQos(prefetchCount int, prefetchSize int, global bool) channelReconnectOption {
+	return func(channel *amqp.Channel) {
+		channel.Qos(prefetchCount, prefetchSize, global)
+	}
 }
 
 func newChannel(conn *Connection, reconnectInterval time.Duration) (*Channel, error) {
@@ -42,6 +52,7 @@ func newChannel(conn *Connection, reconnectInterval time.Duration) (*Channel, er
 	if err := nChannel.connect(); err != nil {
 		return nil, err
 	}
+	nChannel.reconnectOptions = make(map[int]channelReconnectOption)
 	go nChannel.handleConnReconnect()
 	return nChannel, nil
 }
@@ -52,9 +63,15 @@ func (this *Channel) Close() error {
 
 	this.closed = true
 	if this.timer != nil {
-		this.timer.Stop()
+		if !this.timer.Stop() {
+			select {
+			case <-this.timer.C:
+			default:
+			}
+		}
 		this.timer = nil
 	}
+	this.reconnectOptions = nil
 
 	return this.channel.Close()
 }
@@ -138,7 +155,12 @@ func (this *Channel) reconnect(interval time.Duration) {
 	}
 
 	if this.timer != nil {
-		this.timer.Stop()
+		if !this.timer.Stop() {
+			select {
+			case <-this.timer.C:
+			default:
+			}
+		}
 	}
 
 	this.timer = time.AfterFunc(interval, func() {
@@ -155,24 +177,37 @@ func (this *Channel) reconnect(interval time.Duration) {
 			return
 		}
 
-		this.timer.Stop()
+		if !this.timer.Stop() {
+			select {
+			case <-this.timer.C:
+			default:
+			}
+		}
 		this.timer = nil
 
 		if this.onReconnect != nil {
 			this.onReconnect(this)
 		}
 
-		if this.confirmOpts.confirming {
-			this.channel.Confirm(this.confirmOpts.noWait)
-		}
-
-		if this.flowOptions.active {
-			this.channel.Flow(this.flowOptions.active)
+		for _, opt := range this.reconnectOptions {
+			if opt != nil {
+				opt(this.channel)
+			}
 		}
 
 		this.mu.Unlock()
 	})
 	this.mu.Unlock()
+}
+
+func (this *Channel) addReconnectOptions(key int, fn channelReconnectOption) {
+	if fn == nil {
+		return
+	}
+	if this.reconnectOptions == nil {
+		this.reconnectOptions = make(map[int]channelReconnectOption)
+	}
+	this.reconnectOptions[key] = fn
 }
 
 func (this *Channel) OnReconnect(handler func(channel *Channel)) {
@@ -202,6 +237,9 @@ func (this *Channel) OnPublish(handler func(c amqp.Confirmation)) {
 func (this *Channel) Qos(prefetchCount int, prefetchSize int, global bool) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
+
+	this.addReconnectOptions(3, withQos(prefetchCount, prefetchSize, global))
+
 	return this.channel.Qos(prefetchCount, prefetchSize, global)
 }
 
@@ -374,9 +412,7 @@ func (this *Channel) Flow(active bool) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
-	this.flowOptions = flowOptions{
-		active: active,
-	}
+	this.addReconnectOptions(1, withFlow(active))
 
 	return this.channel.Flow(active)
 }
@@ -385,10 +421,7 @@ func (this *Channel) Confirm(noWait bool) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
-	this.confirmOpts = confirmOptions{
-		confirming: true,
-		noWait:     noWait,
-	}
+	this.addReconnectOptions(2, withConfirm(noWait))
 
 	return this.channel.Confirm(noWait)
 }
