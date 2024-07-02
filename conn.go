@@ -45,172 +45,172 @@ func NewConn(url string, config Config) (*Connection, error) {
 	return nConn, nil
 }
 
-func (this *Connection) UpdateSecret(newSecret, reason string) error {
-	this.mu.Lock()
-	defer this.mu.Unlock()
+func (c *Connection) UpdateSecret(newSecret, reason string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	this.addReconnectOptions(1, withSecret(newSecret, reason))
+	c.addReconnectOptions(1, withSecret(newSecret, reason))
 
-	return this.conn.UpdateSecret(newSecret, reason)
+	return c.conn.UpdateSecret(newSecret, reason)
 }
 
-func (this *Connection) LocalAddr() net.Addr {
-	return this.conn.LocalAddr()
+func (c *Connection) LocalAddr() net.Addr {
+	return c.conn.LocalAddr()
 }
 
-func (this *Connection) RemoteAddr() net.Addr {
-	return this.conn.RemoteAddr()
+func (c *Connection) RemoteAddr() net.Addr {
+	return c.conn.RemoteAddr()
 }
 
-func (this *Connection) ConnectionState() tls.ConnectionState {
-	return this.conn.ConnectionState()
+func (c *Connection) ConnectionState() tls.ConnectionState {
+	return c.conn.ConnectionState()
 }
 
-func (this *Connection) Close() error {
-	this.mu.Lock()
-	defer this.mu.Unlock()
+func (c *Connection) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	this.closed = true
-	if this.timer != nil {
-		if !this.timer.Stop() {
+	c.closed = true
+	if c.timer != nil {
+		if !c.timer.Stop() {
 			select {
-			case <-this.timer.C:
+			case <-c.timer.C:
 			default:
 			}
 		}
-		this.timer = nil
+		c.timer = nil
 	}
-	for _, c := range this.reconnects {
-		close(c)
+	for _, rc := range c.reconnects {
+		close(rc)
 	}
-	this.reconnects = nil
-	this.reconnectOptions = nil
+	c.reconnects = nil
+	c.reconnectOptions = nil
 
-	return this.conn.Close()
+	return c.conn.Close()
 }
 
-func (this *Connection) IsClosed() bool {
-	return this.conn.IsClosed()
+func (c *Connection) IsClosed() bool {
+	return c.conn.IsClosed()
 }
 
-func (this *Connection) handleNotify() {
-	var closed = this.conn.NotifyClose(make(chan *amqp.Error, 1))
+func (c *Connection) handleNotify() {
+	var closed = c.conn.NotifyClose(make(chan *amqp.Error, 1))
 	select {
 	case err := <-closed:
-		if this.onClose != nil {
-			this.onClose(err)
+		if c.onClose != nil {
+			c.onClose(err)
 		}
 		if err != nil {
-			this.reconnect(this.config.ReconnectInterval)
+			c.reconnect(c.config.ReconnectInterval)
 		}
 	}
 }
 
-func (this *Connection) connect() error {
-	var conn, err = amqp.DialConfig(this.url, this.config.Config)
+func (c *Connection) connect() error {
+	var conn, err = amqp.DialConfig(c.url, c.config.Config)
 	if err != nil {
 		return err
 	}
-	if this.conn != nil {
-		this.conn.Close()
+	if c.conn != nil {
+		c.conn.Close()
 	}
-	this.conn = conn
+	c.conn = conn
 
-	go this.handleNotify()
+	go c.handleNotify()
 
 	return nil
 }
 
-func (this *Connection) reconnect(interval time.Duration) {
-	this.mu.Lock()
-	if this.closed {
-		this.mu.Unlock()
+func (c *Connection) reconnect(interval time.Duration) {
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
 		return
 	}
 
-	if this.timer != nil {
-		if !this.timer.Stop() {
+	if c.timer != nil {
+		if !c.timer.Stop() {
 			select {
-			case <-this.timer.C:
+			case <-c.timer.C:
 			default:
 			}
 		}
 	}
 
-	this.timer = time.AfterFunc(interval, func() {
-		this.mu.Lock()
-		if this.closed {
-			this.mu.Unlock()
+	c.timer = time.AfterFunc(interval, func() {
+		c.mu.Lock()
+		if c.closed {
+			c.mu.Unlock()
 			return
 		}
 
-		var err = this.connect()
+		var err = c.connect()
 		if err != nil {
-			this.mu.Unlock()
-			this.reconnect(interval)
+			c.mu.Unlock()
+			c.reconnect(interval)
 			return
 		}
 
-		if !this.timer.Stop() {
-			select {
-			case <-this.timer.C:
-			default:
-			}
-		}
-		this.timer = nil
+		//if !c.timer.Stop() {
+		//	select {
+		//	case <-c.timer.C:
+		//	default:
+		//	}
+		//}
+		//c.timer = nil
 
-		for _, c := range this.reconnects {
-			c <- true
-		}
-
-		if this.onReconnect != nil {
-			this.onReconnect(this)
-		}
-
-		for _, opt := range this.reconnectOptions {
+		for _, opt := range c.reconnectOptions {
 			if opt != nil {
-				opt(this.conn)
+				opt(c.conn)
 			}
 		}
 
-		this.mu.Unlock()
+		for _, rc := range c.reconnects {
+			rc <- true
+		}
+
+		c.mu.Unlock()
+
+		if c.onReconnect != nil {
+			c.onReconnect(c)
+		}
 	})
-	this.mu.Unlock()
+	c.mu.Unlock()
 }
 
-func (this *Connection) notifyReconnect(c chan bool) chan bool {
-	this.mu.Lock()
-	defer this.mu.Unlock()
+func (c *Connection) notifyReconnect(rc chan bool) chan bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	if this.closed {
-		close(c)
+	if c.closed {
+		close(rc)
 	} else {
-		this.reconnects = append(this.reconnects, c)
+		c.reconnects = append(c.reconnects, rc)
 	}
-	return c
+	return rc
 }
 
-func (this *Connection) addReconnectOptions(key int, fn reconnectOption) {
+func (c *Connection) addReconnectOptions(key int, fn reconnectOption) {
 	if fn == nil {
 		return
 	}
-	if this.reconnectOptions == nil {
-		this.reconnectOptions = make(map[int]reconnectOption)
+	if c.reconnectOptions == nil {
+		c.reconnectOptions = make(map[int]reconnectOption)
 	}
-	this.reconnectOptions[key] = fn
+	c.reconnectOptions[key] = fn
 }
 
-func (this *Connection) OnReconnect(handler func(conn *Connection)) {
-	this.onReconnect = handler
+func (c *Connection) OnReconnect(handler func(conn *Connection)) {
+	c.onReconnect = handler
 }
 
-func (this *Connection) OnClose(handler func(err *amqp.Error)) {
-	this.onClose = handler
+func (c *Connection) OnClose(handler func(err *amqp.Error)) {
+	c.onClose = handler
 }
 
-func (this *Connection) Channel() (*Channel, error) {
-	this.mu.Lock()
-	defer this.mu.Unlock()
+func (c *Connection) Channel() (*Channel, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	return newChannel(this, this.config.ReconnectInterval)
+	return newChannel(c, c.config.ReconnectInterval)
 }
