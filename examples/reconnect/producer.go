@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	var conn, err = rabbitmq.NewConn("amqp://guest:guest@localhost", rabbitmq.Config{})
+	var conn, err = rabbitmq.NewConn("amqp://admin:admin@localhost", rabbitmq.Config{})
 	if err != nil {
 		fmt.Println("连接 RabbitMQ 发生错误:", err)
 		return
@@ -60,11 +60,11 @@ func main() {
 		err = channel.Publish("", queue.Name, true, false, amqp.Publishing{
 			Body: []byte(fmt.Sprintf("hello %d", i)),
 		})
-		//if err != nil {
-		//	fmt.Printf("发送消息 %d 发生错误: %v \n", i, err)
-		//} else {
-		//	fmt.Printf("发送消息 %d 成功 \n", i)
-		//}
+		if err != nil {
+			fmt.Printf("发送消息 %d 发生错误: %v \n", i, err)
+		} else {
+			fmt.Printf("发送消息 %d 成功 \n", i)
+		}
 
 		time.Sleep(time.Second)
 	}

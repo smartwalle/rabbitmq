@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	var conn, err = rabbitmq.NewConn("amqp://guest:guest@localhost", rabbitmq.Config{})
+	var conn, err = rabbitmq.NewConn("amqp://admin:admin@localhost", rabbitmq.Config{})
 	if err != nil {
 		fmt.Println("连接 RabbitMQ 发生错误:", err)
 		return
