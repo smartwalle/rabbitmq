@@ -20,7 +20,7 @@ type Connection struct {
 	reconnectOptions map[int]reconnectOption
 
 	reconnectHandler func(*Connection)
-	closeHandler     func(*amqp.Error)
+	closeHandler     func(*Error)
 }
 
 type reconnectOption func(conn *amqp.Connection)
@@ -92,7 +92,7 @@ func (c *Connection) IsClosed() bool {
 }
 
 func (c *Connection) handleNotify() {
-	var closed = c.conn.NotifyClose(make(chan *amqp.Error, 1))
+	var closed = c.conn.NotifyClose(make(chan *Error, 1))
 	select {
 	case err := <-closed:
 		if c.closeHandler != nil {
@@ -169,7 +169,7 @@ func (c *Connection) OnReconnect(handler func(conn *Connection)) {
 	c.reconnectHandler = handler
 }
 
-func (c *Connection) OnClose(handler func(err *amqp.Error)) {
+func (c *Connection) OnClose(handler func(err *Error)) {
 	c.closeHandler = handler
 }
 
