@@ -18,8 +18,8 @@ type Connection struct {
 
 	reconnectOptions map[int]reconnectOption
 
-	onReconnect func(*Connection)
-	onClose     func(*amqp.Error)
+	reconnectHandler func(*Connection)
+	closeHandler     func(*amqp.Error)
 }
 
 type reconnectOption func(conn *amqp.Connection)
@@ -92,8 +92,8 @@ func (c *Connection) handleNotify() {
 	var closed = c.conn.NotifyClose(make(chan *amqp.Error, 1))
 	select {
 	case err := <-closed:
-		if c.onClose != nil {
-			c.onClose(err)
+		if c.closeHandler != nil {
+			c.closeHandler(err)
 		}
 		if err != nil {
 			c.reconnect(c.config.ReconnectInterval)
@@ -162,8 +162,8 @@ func (c *Connection) reconnect(interval time.Duration) {
 
 		c.mu.Unlock()
 
-		if c.onReconnect != nil {
-			c.onReconnect(c)
+		if c.reconnectHandler != nil {
+			c.reconnectHandler(c)
 		}
 	})
 	c.mu.Unlock()
@@ -180,11 +180,11 @@ func (c *Connection) addReconnectOptions(key int, fn reconnectOption) {
 }
 
 func (c *Connection) OnReconnect(handler func(conn *Connection)) {
-	c.onReconnect = handler
+	c.reconnectHandler = handler
 }
 
 func (c *Connection) OnClose(handler func(err *amqp.Error)) {
-	c.onClose = handler
+	c.closeHandler = handler
 }
 
 func (c *Connection) Channel() (*Channel, error) {

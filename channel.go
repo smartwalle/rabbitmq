@@ -17,12 +17,12 @@ type Channel struct {
 
 	reconnectOptions map[int]channelReconnectOption
 
-	onReconnect func(*Channel)
-	onClose     func(*amqp.Error)
-	onFlow      func(bool)
-	onReturn    func(amqp.Return)
-	onCancel    func(string)
-	onPublish   func(amqp.Confirmation)
+	reconnectHandle func(*Channel)
+	closeHandler    func(*amqp.Error)
+	flowHandler     func(bool)
+	returnHandler   func(amqp.Return)
+	cancelHandler   func(string)
+	publishHandler  func(amqp.Confirmation)
 }
 
 type channelReconnectOption func(channel *amqp.Channel)
@@ -104,30 +104,30 @@ func (c *Channel) handleNotify() {
 	for {
 		select {
 		case err := <-closes:
-			if c.onClose != nil {
-				c.onClose(err)
+			if c.closeHandler != nil {
+				c.closeHandler(err)
 			}
 			if err != nil {
 				c.reconnect(c.reconnectInterval)
 			}
 			return
 		case value := <-cancels:
-			if c.onCancel != nil {
-				c.onCancel(value)
+			if c.cancelHandler != nil {
+				c.cancelHandler(value)
 			}
 			c.reconnect(c.reconnectInterval)
 			return
 		case value := <-flows:
-			if c.onFlow != nil {
-				c.onFlow(value)
+			if c.flowHandler != nil {
+				c.flowHandler(value)
 			}
 		case value := <-confirms:
-			if c.onPublish != nil {
-				c.onPublish(value)
+			if c.publishHandler != nil {
+				c.publishHandler(value)
 			}
 		case value := <-returns:
-			if c.onReturn != nil {
-				c.onReturn(value)
+			if c.returnHandler != nil {
+				c.returnHandler(value)
 			}
 		}
 	}
@@ -179,8 +179,8 @@ func (c *Channel) reconnect(interval time.Duration) {
 
 		c.mu.Unlock()
 
-		if c.onReconnect != nil {
-			c.onReconnect(c)
+		if c.reconnectHandle != nil {
+			c.reconnectHandle(c)
 		}
 	})
 	c.mu.Unlock()
@@ -197,27 +197,27 @@ func (c *Channel) addReconnectOptions(key int, fn channelReconnectOption) {
 }
 
 func (c *Channel) OnReconnect(handler func(channel *Channel)) {
-	c.onReconnect = handler
+	c.reconnectHandle = handler
 }
 
 func (c *Channel) OnClose(handler func(err *amqp.Error)) {
-	c.onClose = handler
+	c.closeHandler = handler
 }
 
 func (c *Channel) OnCancel(handler func(c string)) {
-	c.onCancel = handler
+	c.cancelHandler = handler
 }
 
 func (c *Channel) OnFlow(handler func(c bool)) {
-	c.onFlow = handler
+	c.flowHandler = handler
 }
 
 func (c *Channel) OnReturn(handler func(r amqp.Return)) {
-	c.onReturn = handler
+	c.returnHandler = handler
 }
 
 func (c *Channel) OnPublish(handler func(c amqp.Confirmation)) {
-	c.onPublish = handler
+	c.publishHandler = handler
 }
 
 func (c *Channel) Qos(prefetchCount int, prefetchSize int, global bool) error {
