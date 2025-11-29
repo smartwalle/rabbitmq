@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/smartwalle/rabbitmq"
 	"time"
 )
@@ -16,7 +15,7 @@ func main() {
 	fmt.Println("连接 RabbitMQ 成功")
 	defer conn.Close()
 
-	conn.OnClose(func(err *amqp.Error) {
+	conn.OnClose(func(err *rabbitmq.Error) {
 		fmt.Println("Conn OnClose:", err)
 	})
 
@@ -51,7 +50,7 @@ func main() {
 		go consume(channel, queue)
 	})
 
-	channel.OnClose(func(err *amqp.Error) {
+	channel.OnClose(func(err *rabbitmq.Error) {
 		fmt.Println("Channel OnClose:", err)
 	})
 
@@ -60,7 +59,7 @@ func main() {
 	select {}
 }
 
-func consume(channel *rabbitmq.Channel, queue amqp.Queue) {
+func consume(channel *rabbitmq.Channel, queue rabbitmq.Queue) {
 	defer func() {
 		fmt.Println("停止接收消息")
 	}()

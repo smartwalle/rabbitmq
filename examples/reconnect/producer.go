@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/smartwalle/rabbitmq"
 	"time"
 )
@@ -16,7 +15,7 @@ func main() {
 	fmt.Println("连接 RabbitMQ 成功")
 	defer conn.Close()
 
-	conn.OnClose(func(err *amqp.Error) {
+	conn.OnClose(func(err *rabbitmq.Error) {
 		fmt.Println("Conn OnClose:", err)
 	})
 
@@ -50,14 +49,14 @@ func main() {
 		fmt.Println("Channel OnReconnect:", time.Now().Unix())
 	})
 
-	channel.OnClose(func(err *amqp.Error) {
+	channel.OnClose(func(err *rabbitmq.Error) {
 		fmt.Println("Channel OnClose:", err)
 	})
 
 	var i = 0
 	for {
 		i++
-		err = channel.Publish("", queue.Name, true, false, amqp.Publishing{
+		err = channel.Publish("", queue.Name, true, false, rabbitmq.Publishing{
 			Body: []byte(fmt.Sprintf("hello %d", i)),
 		})
 		if err != nil {

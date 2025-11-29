@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/smartwalle/rabbitmq"
 	"time"
 )
@@ -41,7 +40,7 @@ func main() {
 	var i = 0
 	for {
 		i++
-		err = channel.Publish("", queue.Name, false, false, amqp.Publishing{
+		err = channel.Publish("", queue.Name, false, false, rabbitmq.Publishing{
 			Body: []byte(fmt.Sprintf("hello %d", i)),
 		})
 		if err != nil {

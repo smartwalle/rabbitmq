@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/smartwalle/rabbitmq"
 )
 
@@ -42,7 +41,7 @@ func main() {
 	select {}
 }
 
-func consume(channel *rabbitmq.Channel, queue amqp.Queue) {
+func consume(channel *rabbitmq.Channel, queue rabbitmq.Queue) {
 	defer func() {
 		fmt.Println("停止接收消息")
 	}()
