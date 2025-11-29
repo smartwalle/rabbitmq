@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+const (
+	optChannelFlow    = 1
+	optChannelConfirm = 2
+)
+
 type Channel struct {
 	mu                sync.Mutex
 	conn              *Connection
@@ -20,10 +25,11 @@ type Channel struct {
 
 	reconnectHandle func(*Channel)
 	closeHandler    func(*Error)
-	flowHandler     func(bool)
-	returnHandler   func(Return)
 	cancelHandler   func(string)
-	publishHandler  func(Confirmation)
+
+	flowHandler    func(bool)
+	returnHandler  func(Return)
+	publishHandler func(Confirmation)
 }
 
 type channelReconnectOption func(channel *amqp.Channel)
@@ -377,7 +383,7 @@ func (c *Channel) Flow(active bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.addReconnectOptions(1, withFlow(active))
+	c.addReconnectOptions(optChannelFlow, withFlow(active))
 
 	return c.channel.Flow(active)
 }
@@ -386,7 +392,7 @@ func (c *Channel) Confirm(noWait bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.addReconnectOptions(2, withConfirm(noWait))
+	c.addReconnectOptions(optChannelConfirm, withConfirm(noWait))
 
 	return c.channel.Confirm(noWait)
 }

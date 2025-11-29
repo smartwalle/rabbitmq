@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+const (
+	optConnUpdateSecret = 1
+)
+
 type Connection struct {
 	mu     sync.Mutex
 	conn   *amqp.Connection
@@ -50,7 +54,7 @@ func (c *Connection) UpdateSecret(newSecret, reason string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.addReconnectOptions(1, withSecret(newSecret, reason))
+	c.addReconnectOptions(optConnUpdateSecret, withSecret(newSecret, reason))
 
 	return c.conn.UpdateSecret(newSecret, reason)
 }
