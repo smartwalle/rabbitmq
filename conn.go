@@ -13,8 +13,9 @@ type Connection struct {
 	conn   *amqp.Connection
 	url    string
 	config Config
-	closed bool
-	timer  *time.Timer
+
+	closeChan chan struct{}
+	closeOnce sync.Once
 
 	reconnectOptions map[int]reconnectOption
 
@@ -38,6 +39,7 @@ func NewConn(url string, config Config) (*Connection, error) {
 	var nConn = &Connection{}
 	nConn.url = url
 	nConn.config = config
+	nConn.closeChan = make(chan struct{})
 	if err := nConn.connect(); err != nil {
 		return nil, err
 	}
@@ -54,14 +56,20 @@ func (c *Connection) UpdateSecret(newSecret, reason string) error {
 }
 
 func (c *Connection) LocalAddr() net.Addr {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.conn.LocalAddr()
 }
 
 func (c *Connection) RemoteAddr() net.Addr {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.conn.RemoteAddr()
 }
 
 func (c *Connection) ConnectionState() tls.ConnectionState {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.conn.ConnectionState()
 }
 
@@ -69,22 +77,17 @@ func (c *Connection) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.closed = true
-	if c.timer != nil {
-		if !c.timer.Stop() {
-			select {
-			case <-c.timer.C:
-			default:
-			}
-		}
-		c.timer = nil
-	}
+	c.closeOnce.Do(func() {
+		close(c.closeChan)
+	})
 	c.reconnectOptions = nil
 
 	return c.conn.Close()
 }
 
 func (c *Connection) IsClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.conn.IsClosed()
 }
 
@@ -118,61 +121,44 @@ func (c *Connection) connect() error {
 
 func (c *Connection) reconnect(interval time.Duration) {
 	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return
-	}
 
-	if c.timer != nil {
-		if !c.timer.Stop() {
-			select {
-			case <-c.timer.C:
-			default:
-			}
-		}
-	}
-
-	c.timer = time.AfterFunc(interval, func() {
-		c.mu.Lock()
-		if c.closed {
+	for {
+		select {
+		case <-time.After(interval):
+		case <-c.closeChan:
 			c.mu.Unlock()
 			return
 		}
 
 		var err = c.connect()
 		if err != nil {
-			c.mu.Unlock()
-			c.reconnect(interval)
-			return
+			continue
 		}
-
-		//if !c.timer.Stop() {
-		//	select {
-		//	case <-c.timer.C:
-		//	default:
-		//	}
-		//}
-		//c.timer = nil
 
 		for _, opt := range c.reconnectOptions {
 			if opt != nil {
 				opt(c.conn)
 			}
 		}
-
 		c.mu.Unlock()
 
 		if c.reconnectHandler != nil {
 			c.reconnectHandler(c)
 		}
-	})
-	c.mu.Unlock()
+		return
+	}
 }
 
 func (c *Connection) addReconnectOptions(key int, fn reconnectOption) {
 	if fn == nil {
 		return
 	}
+	select {
+	case <-c.closeChan:
+		return
+	default:
+	}
+
 	if c.reconnectOptions == nil {
 		c.reconnectOptions = make(map[int]reconnectOption)
 	}

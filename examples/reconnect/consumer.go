@@ -26,7 +26,7 @@ func main() {
 
 	channel, err := conn.Channel()
 	if err != nil {
-		fmt.Println("创建 Channel 发生错误:", channel)
+		fmt.Println("创建 Channel 发生错误:", err)
 		return
 	}
 	fmt.Println("创建 Channel 成功")
