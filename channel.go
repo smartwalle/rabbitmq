@@ -361,24 +361,6 @@ func (c *Channel) Get(queue string, autoAck bool) (msg Delivery, ok bool, err er
 	return c.channel.Get(queue, autoAck)
 }
 
-func (c *Channel) Tx() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.Tx()
-}
-
-func (c *Channel) TxCommit() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.TxCommit()
-}
-
-func (c *Channel) TxRollback() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.TxRollback()
-}
-
 func (c *Channel) Flow(active bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
