@@ -17,3 +17,10 @@ type Delivery = amqp.Delivery
 type Publishing = amqp.Publishing
 
 type DeferredConfirmation = amqp.DeferredConfirmation
+
+const (
+	ExchangeTypeDirect  = "direct"
+	ExchangeTypeTopic   = "topic"
+	ExchangeTypeFanout  = "fanout"
+	ExchangeTypeHeaders = "headers"
+)
