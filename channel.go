@@ -392,17 +392,25 @@ func (c *Channel) Confirm(noWait bool) error {
 }
 
 func (c *Channel) Ack(tag uint64, multiple bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.channel.Ack(tag, multiple)
 }
 
 func (c *Channel) Nack(tag uint64, multiple bool, requeue bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.channel.Nack(tag, multiple, requeue)
 }
 
 func (c *Channel) Reject(tag uint64, requeue bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.channel.Reject(tag, requeue)
 }
 
 func (c *Channel) GetNextPublishSeqNo() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.channel.GetNextPublishSeqNo()
 }
