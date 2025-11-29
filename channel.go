@@ -53,7 +53,6 @@ func newChannel(conn *Connection, reconnectInterval time.Duration) (*Channel, er
 		return nil, err
 	}
 	nChannel.reconnectOptions = make(map[int]channelReconnectOption)
-	go nChannel.handleConnReconnect()
 	return nChannel, nil
 }
 
@@ -78,19 +77,6 @@ func (c *Channel) Close() error {
 
 func (c *Channel) IsClosed() bool {
 	return c.channel.IsClosed()
-}
-
-func (c *Channel) handleConnReconnect() {
-	var connected = c.conn.notifyReconnect(make(chan bool, 1))
-	for {
-		select {
-		case _, ok := <-connected:
-			if !ok {
-				return
-			}
-			c.reconnect(time.Millisecond)
-		}
-	}
 }
 
 func (c *Channel) connect() error {

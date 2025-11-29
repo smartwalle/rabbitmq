@@ -16,7 +16,6 @@ type Connection struct {
 	closed bool
 	timer  *time.Timer
 
-	reconnects       []chan bool
 	reconnectOptions map[int]reconnectOption
 
 	onReconnect func(*Connection)
@@ -80,10 +79,6 @@ func (c *Connection) Close() error {
 		}
 		c.timer = nil
 	}
-	for _, rc := range c.reconnects {
-		close(rc)
-	}
-	c.reconnects = nil
 	c.reconnectOptions = nil
 
 	return c.conn.Close()
@@ -165,10 +160,6 @@ func (c *Connection) reconnect(interval time.Duration) {
 			}
 		}
 
-		for _, rc := range c.reconnects {
-			rc <- true
-		}
-
 		c.mu.Unlock()
 
 		if c.onReconnect != nil {
@@ -176,18 +167,6 @@ func (c *Connection) reconnect(interval time.Duration) {
 		}
 	})
 	c.mu.Unlock()
-}
-
-func (c *Connection) notifyReconnect(rc chan bool) chan bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.closed {
-		close(rc)
-	} else {
-		c.reconnects = append(c.reconnects, rc)
-	}
-	return rc
 }
 
 func (c *Connection) addReconnectOptions(key int, fn reconnectOption) {
