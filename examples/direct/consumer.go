@@ -24,7 +24,7 @@ func main() {
 	defer channel.Close()
 	log.Println("创建 Channel 成功")
 
-	var exchange = "exchange_route"
+	var exchange = "exchange_direct"
 
 	if err = channel.ExchangeDeclare(exchange, rabbitmq.ExchangeTypeDirect, false, false, false, false, nil); err != nil {
 		log.Println("创建 Exchange 异常:", err)
