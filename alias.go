@@ -10,6 +10,10 @@ type Confirmation = amqp.Confirmation
 
 type Table = amqp.Table
 
+func NewTable() Table {
+	return make(Table)
+}
+
 type Queue = amqp.Queue
 
 type Delivery = amqp.Delivery
@@ -19,8 +23,9 @@ type Publishing = amqp.Publishing
 type DeferredConfirmation = amqp.DeferredConfirmation
 
 const (
-	ExchangeTypeDirect  = "direct"
-	ExchangeTypeTopic   = "topic"
-	ExchangeTypeFanout  = "fanout"
-	ExchangeTypeHeaders = "headers"
+	ExchangeTypeDirect         = "direct"
+	ExchangeTypeTopic          = "topic"
+	ExchangeTypeFanout         = "fanout"
+	ExchangeTypeHeaders        = "headers"
+	ExchangeTypeDelayedMessage = "x-delayed-message"
 )
