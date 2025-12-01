@@ -96,9 +96,9 @@ func (c *Connection) IsClosed() bool {
 }
 
 func (c *Connection) handleNotify() {
-	var closed = c.conn.NotifyClose(make(chan *Error, 1))
+	var closes = c.conn.NotifyClose(make(chan *Error, 1))
 	select {
-	case err := <-closed:
+	case err := <-closes:
 		if c.closeHandler != nil {
 			c.closeHandler(err)
 		}
