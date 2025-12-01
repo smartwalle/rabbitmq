@@ -18,7 +18,7 @@ type Channel struct {
 	channel           *amqp.Channel
 	reconnectInterval time.Duration
 
-	closeChan chan struct{}
+	close     chan struct{}
 	closeOnce sync.Once
 
 	reconnectOptions map[int]channelReconnectOption
@@ -55,7 +55,7 @@ func withQos(prefetchCount int, prefetchSize int, global bool) channelReconnectO
 func newChannel(conn *Connection, reconnectInterval time.Duration) (*Channel, error) {
 	var nChannel = &Channel{}
 	nChannel.conn = conn
-	nChannel.closeChan = make(chan struct{})
+	nChannel.close = make(chan struct{})
 	nChannel.reconnectInterval = reconnectInterval
 	if err := nChannel.connect(); err != nil {
 		return nil, err
@@ -68,7 +68,7 @@ func (c *Channel) Close() error {
 	defer c.mu.Unlock()
 
 	c.closeOnce.Do(func() {
-		close(c.closeChan)
+		close(c.close)
 	})
 	c.reconnectOptions = nil
 
@@ -141,7 +141,7 @@ func (c *Channel) reconnect(interval time.Duration) {
 	for {
 		select {
 		case <-time.After(interval):
-		case <-c.closeChan:
+		case <-c.close:
 			c.mu.Unlock()
 			return
 		}
@@ -170,7 +170,7 @@ func (c *Channel) addReconnectOptions(key int, fn channelReconnectOption) {
 		return
 	}
 	select {
-	case <-c.closeChan:
+	case <-c.close:
 		return
 	default:
 	}

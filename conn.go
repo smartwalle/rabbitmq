@@ -18,7 +18,7 @@ type Connection struct {
 	url    string
 	config Config
 
-	closeChan chan struct{}
+	close     chan struct{}
 	closeOnce sync.Once
 
 	reconnectOptions map[int]reconnectOption
@@ -43,7 +43,7 @@ func NewConn(url string, config Config) (*Connection, error) {
 	var nConn = &Connection{}
 	nConn.url = url
 	nConn.config = config
-	nConn.closeChan = make(chan struct{})
+	nConn.close = make(chan struct{})
 	if err := nConn.connect(); err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (c *Connection) Close() error {
 	defer c.mu.Unlock()
 
 	c.closeOnce.Do(func() {
-		close(c.closeChan)
+		close(c.close)
 	})
 	c.reconnectOptions = nil
 
@@ -129,7 +129,7 @@ func (c *Connection) reconnect(interval time.Duration) {
 	for {
 		select {
 		case <-time.After(interval):
-		case <-c.closeChan:
+		case <-c.close:
 			c.mu.Unlock()
 			return
 		}
@@ -158,7 +158,7 @@ func (c *Connection) addReconnectOptions(key int, fn reconnectOption) {
 		return
 	}
 	select {
-	case <-c.closeChan:
+	case <-c.close:
 		return
 	default:
 	}
