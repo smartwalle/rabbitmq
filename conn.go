@@ -131,6 +131,7 @@ func (c *Connection) connect() error {
 		c.conn.Close()
 	}
 	c.conn = conn
+	c.blocked = false
 
 	go c.handleNotify()
 

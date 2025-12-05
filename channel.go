@@ -96,6 +96,7 @@ func (c *Channel) connect() error {
 		c.channel.Close()
 	}
 	c.channel = channel
+	c.overflowed = false
 
 	go c.handleNotify()
 
