@@ -8,6 +8,8 @@ type Return = amqp.Return
 
 type Confirmation = amqp.Confirmation
 
+type Blocking = amqp.Blocking
+
 type Table = amqp.Table
 
 func NewTable() Table {

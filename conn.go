@@ -25,6 +25,9 @@ type Connection struct {
 
 	reconnectHandler func(*Connection)
 	closeHandler     func(*Error)
+	blockHandler     func(Blocking)
+
+	blocked bool
 }
 
 type reconnectOption func(conn *amqp.Connection)
@@ -95,8 +98,14 @@ func (c *Connection) IsClosed() bool {
 	return c.conn.IsClosed()
 }
 
+func (c *Connection) Blocked() bool {
+	return c.blocked
+}
+
 func (c *Connection) handleNotify() {
 	var closes = c.conn.NotifyClose(make(chan *Error, 1))
+	var blocks = c.conn.NotifyBlocked(make(chan Blocking, 1))
+
 	select {
 	case err := <-closes:
 		if c.closeHandler != nil {
@@ -104,6 +113,11 @@ func (c *Connection) handleNotify() {
 		}
 		if err != nil {
 			c.reconnect(c.config.ReconnectInterval)
+		}
+	case block := <-blocks:
+		c.blocked = block.Active
+		if c.blockHandler != nil {
+			c.blockHandler(block)
 		}
 	}
 }

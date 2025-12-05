@@ -30,6 +30,8 @@ type Channel struct {
 	flowHandler    func(bool)
 	returnHandler  func(Return)
 	publishHandler func(Confirmation)
+
+	overflowed bool
 }
 
 type channelReconnectOption func(channel *amqp.Channel)
@@ -81,6 +83,10 @@ func (c *Channel) IsClosed() bool {
 	return c.channel.IsClosed()
 }
 
+func (c *Channel) Overflowed() bool {
+	return c.overflowed
+}
+
 func (c *Channel) connect() error {
 	var channel, err = c.conn.conn.Channel()
 	if err != nil {
@@ -120,6 +126,7 @@ func (c *Channel) handleNotify() {
 			c.reconnect(c.reconnectInterval)
 			return
 		case value := <-flows:
+			c.overflowed = value
 			if c.flowHandler != nil {
 				c.flowHandler(value)
 			}
