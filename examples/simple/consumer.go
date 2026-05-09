@@ -1,14 +1,16 @@
 package main
 
 import (
-	"github.com/smartwalle/rabbitmq"
 	"log"
+
+	"github.com/smartwalle/rabbitmq"
+	"github.com/smartwalle/rabbitmq/examples"
 )
 
 func main() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 
-	conn, err := rabbitmq.NewConn("amqp://admin:admin@localhost", rabbitmq.Config{})
+	conn, err := rabbitmq.NewConn(examples.URL, rabbitmq.Config{})
 	if err != nil {
 		log.Println("连接 RabbitMQ 异常:", err)
 		return
@@ -24,7 +26,7 @@ func main() {
 	defer channel.Close()
 	log.Println("创建 Channel 成功")
 
-	queue, err := channel.QueueDeclare("simple_queue", true, true, false, false, nil)
+	queue, err := channel.QueueDeclare("simple_queue", true, false, false, false, nil)
 	if err != nil {
 		log.Println("创建 Queue 异常:", err)
 		return
@@ -43,7 +45,13 @@ func main() {
 				return
 			}
 			log.Println("收到消息:", string(message.Body))
-			message.Ack(false)
+
+			go func(msg rabbitmq.Delivery) {
+				//time.Sleep(time.Second * 5)
+				log.Println("------:", string(msg.Body))
+				msg.Ack(false)
+			}(message)
+
 		}
 	}
 }

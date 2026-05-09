@@ -2,16 +2,18 @@ package main
 
 import (
 	"fmt"
-	"github.com/smartwalle/rabbitmq"
 	"log"
 	"strconv"
 	"time"
+
+	"github.com/smartwalle/rabbitmq"
+	"github.com/smartwalle/rabbitmq/examples"
 )
 
 func main() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 
-	conn, err := rabbitmq.NewConn("amqp://admin:admin@localhost", rabbitmq.Config{})
+	conn, err := rabbitmq.NewConn(examples.URL, rabbitmq.Config{})
 	if err != nil {
 		log.Println("连接 RabbitMQ 异常:", err)
 		return

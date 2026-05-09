@@ -2,12 +2,15 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/smartwalle/rabbitmq"
+	"github.com/smartwalle/rabbitmq/examples"
+
 	"time"
 )
 
 func main() {
-	var conn, err = rabbitmq.NewConn("amqp://admin:admin@localhost", rabbitmq.Config{})
+	var conn, err = rabbitmq.NewConn(examples.URL, rabbitmq.Config{})
 	if err != nil {
 		fmt.Println("连接 RabbitMQ 发生错误:", err)
 		return
