@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/smartwalle/rabbitmq"
 	"github.com/smartwalle/rabbitmq/examples"
 
@@ -57,8 +59,14 @@ func main() {
 			if !ok {
 				return
 			}
-			log.Println("收到消息:", string(message.Body))
-			message.Ack(false)
+
+			go func() {
+				log.Println("收到消息:", string(message.Body))
+				time.Sleep(time.Second * 5)
+				log.Println("-------")
+				message.Ack(false)
+			}()
+
 		}
 	}
 }
