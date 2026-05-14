@@ -2,9 +2,10 @@ package rabbitmq
 
 import (
 	"context"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"sync"
 	"time"
+
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 const (
@@ -296,6 +297,12 @@ func (c *Channel) Consume(queue, consumer string, autoAck, exclusive, noLocal, n
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.channel.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
+}
+
+func (c *Channel) ConsumeWithContext(ctx context.Context, queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args Table) (<-chan Delivery, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.channel.ConsumeWithContext(ctx, queue, consumer, autoAck, exclusive, noLocal, noWait, args)
 }
 
 func (c *Channel) ExchangeDeclare(name string, kind string, durable bool, autoDelete bool, internal bool, noWait bool, args Table) error {
