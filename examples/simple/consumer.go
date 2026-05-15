@@ -33,6 +33,8 @@ func main() {
 	}
 	log.Println("创建 Queue 成功")
 
+	channel.Qos(2, 0, false)
+
 	messages, err := channel.Consume(queue.Name, "", false, false, false, false, nil)
 	if err != nil {
 		log.Println("接收消息异常:", err)
