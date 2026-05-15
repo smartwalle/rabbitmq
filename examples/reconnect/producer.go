@@ -10,7 +10,9 @@ import (
 )
 
 func main() {
-	var conn, err = rabbitmq.NewConn(examples.URL, rabbitmq.Config{})
+	var conn, err = rabbitmq.NewConn(examples.URL, rabbitmq.Config{
+		ReconnectInterval: time.Second,
+	})
 	if err != nil {
 		fmt.Println("连接 RabbitMQ 发生错误:", err)
 		return
@@ -59,8 +61,9 @@ func main() {
 	var i = 0
 	for {
 		i++
-		err = channel.Publish("", queue.Name, true, false, rabbitmq.Publishing{
-			Body: []byte(fmt.Sprintf("hello %d", i)),
+		err = channel.Publish("", queue.Name, false, false, rabbitmq.Publishing{
+			DeliveryMode: rabbitmq.Persistent,
+			Body:         []byte(fmt.Sprintf("hello %d", i)),
 		})
 		if err != nil {
 			fmt.Printf("发送消息 %d 发生错误: %v \n", i, err)
@@ -70,6 +73,4 @@ func main() {
 
 		time.Sleep(time.Second)
 	}
-
-	select {}
 }

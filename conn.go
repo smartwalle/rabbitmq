@@ -2,10 +2,11 @@ package rabbitmq
 
 import (
 	"crypto/tls"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"net"
 	"sync"
 	"time"
+
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 const (
@@ -34,7 +35,7 @@ type reconnectOption func(conn *amqp.Connection)
 
 func withSecret(secret, reason string) reconnectOption {
 	return func(conn *amqp.Connection) {
-		conn.UpdateSecret(secret, reason)
+		_ = conn.UpdateSecret(secret, reason)
 	}
 }
 
@@ -128,7 +129,7 @@ func (c *Connection) connect() error {
 		return err
 	}
 	if c.conn != nil {
-		c.conn.Close()
+		_ = c.conn.Close()
 	}
 	c.conn = conn
 	c.blocked = false

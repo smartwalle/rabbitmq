@@ -31,3 +31,8 @@ const (
 	ExchangeTypeHeaders        = "headers"
 	ExchangeTypeDelayedMessage = "x-delayed-message"
 )
+
+const (
+	Transient  = amqp.Transient
+	Persistent = amqp.Persistent
+)

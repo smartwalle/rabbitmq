@@ -11,6 +11,7 @@ import (
 const (
 	optChannelFlow    = 1
 	optChannelConfirm = 2
+	optChannelQos     = 3
 )
 
 type Channel struct {
@@ -19,8 +20,9 @@ type Channel struct {
 	channel           *amqp.Channel
 	reconnectInterval time.Duration
 
-	close     chan struct{}
-	closeOnce sync.Once
+	closed      chan struct{}
+	closeOnce   sync.Once
+	reconnected chan struct{}
 
 	reconnectOptions map[int]channelReconnectOption
 
@@ -39,27 +41,28 @@ type channelReconnectOption func(channel *amqp.Channel)
 
 func withConfirm(noWait bool) channelReconnectOption {
 	return func(channel *amqp.Channel) {
-		channel.Confirm(noWait)
+		_ = channel.Confirm(noWait)
 	}
 }
 
 func withFlow(active bool) channelReconnectOption {
 	return func(channel *amqp.Channel) {
-		channel.Flow(active)
+		_ = channel.Flow(active)
 	}
 }
 
 func withQos(prefetchCount int, prefetchSize int, global bool) channelReconnectOption {
 	return func(channel *amqp.Channel) {
-		channel.Qos(prefetchCount, prefetchSize, global)
+		_ = channel.Qos(prefetchCount, prefetchSize, global)
 	}
 }
 
 func newChannel(conn *Connection, reconnectInterval time.Duration) (*Channel, error) {
 	var nChannel = &Channel{}
 	nChannel.conn = conn
-	nChannel.close = make(chan struct{})
+	nChannel.closed = make(chan struct{})
 	nChannel.reconnectInterval = reconnectInterval
+	nChannel.reconnected = make(chan struct{})
 	if err := nChannel.connect(); err != nil {
 		return nil, err
 	}
@@ -71,7 +74,8 @@ func (c *Channel) Close() error {
 	defer c.mu.Unlock()
 
 	c.closeOnce.Do(func() {
-		close(c.close)
+		close(c.closed)
+		close(c.reconnected)
 	})
 	c.reconnectOptions = nil
 
@@ -94,7 +98,7 @@ func (c *Channel) connect() error {
 		return err
 	}
 	if c.channel != nil {
-		c.channel.Close()
+		_ = c.channel.Close()
 	}
 	c.channel = channel
 	c.overflowed = false
@@ -150,7 +154,7 @@ func (c *Channel) reconnect(interval time.Duration) {
 	for {
 		select {
 		case <-time.After(interval):
-		case <-c.close:
+		case <-c.closed:
 			c.mu.Unlock()
 			return
 		}
@@ -167,6 +171,9 @@ func (c *Channel) reconnect(interval time.Duration) {
 		}
 		c.mu.Unlock()
 
+		close(c.reconnected)
+		c.reconnected = make(chan struct{})
+
 		if c.reconnectHandle != nil {
 			c.reconnectHandle(c)
 		}
@@ -179,7 +186,7 @@ func (c *Channel) addReconnectOptions(key int, fn channelReconnectOption) {
 		return
 	}
 	select {
-	case <-c.close:
+	case <-c.closed:
 		return
 	default:
 	}
@@ -218,16 +225,16 @@ func (c *Channel) Qos(prefetchCount int, prefetchSize int, global bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.addReconnectOptions(3, withQos(prefetchCount, prefetchSize, global))
+	c.addReconnectOptions(optChannelQos, withQos(prefetchCount, prefetchSize, global))
 
 	return c.channel.Qos(prefetchCount, prefetchSize, global)
 }
 
-func (c *Channel) Cancel(consumer string, noWait bool) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.Cancel(consumer, noWait)
-}
+//func (c *Channel) Cancel(consumer string, noWait bool) error {
+//	c.mu.Lock()
+//	defer c.mu.Unlock()
+//	return c.channel.Cancel(consumer, noWait)
+//}
 
 // QueueDeclare
 //
@@ -296,13 +303,46 @@ func (c *Channel) QueueDelete(name string, ifUnused, ifEmpty, noWait bool) (int,
 func (c *Channel) Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args Table) (<-chan Delivery, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.channel.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
-}
+	var currentChannel = c.channel
 
-func (c *Channel) ConsumeWithContext(ctx context.Context, queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args Table) (<-chan Delivery, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.ConsumeWithContext(ctx, queue, consumer, autoAck, exclusive, noLocal, noWait, args)
+	var reader, err = currentChannel.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
+	if err != nil {
+		return reader, err
+	}
+
+	var writer = make(chan Delivery)
+
+	go func() {
+		defer close(writer)
+		for {
+			select {
+			case <-c.closed:
+				return
+			default:
+				select {
+				case <-c.closed:
+					return
+				case <-c.reconnected:
+					c.mu.Lock()
+					currentChannel = c.channel
+					c.mu.Unlock()
+
+					reader, _ = currentChannel.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
+				case msg, ok := <-reader:
+					if !ok {
+						var channelClosed = currentChannel.IsClosed()
+						if !channelClosed {
+							return
+						}
+						reader = make(<-chan Delivery)
+						continue
+					}
+					writer <- msg
+				}
+			}
+		}
+	}()
+	return writer, nil
 }
 
 func (c *Channel) ExchangeDeclare(name string, kind string, durable bool, autoDelete bool, internal bool, noWait bool, args Table) error {

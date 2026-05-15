@@ -10,7 +10,9 @@ import (
 )
 
 func main() {
-	var conn, err = rabbitmq.NewConn(examples.URL, rabbitmq.Config{})
+	var conn, err = rabbitmq.NewConn(examples.URL, rabbitmq.Config{
+		ReconnectInterval: time.Second,
+	})
 	if err != nil {
 		fmt.Println("连接 RabbitMQ 发生错误:", err)
 		return
@@ -50,7 +52,6 @@ func main() {
 
 	channel.OnReconnect(func(channel *rabbitmq.Channel) {
 		fmt.Println("Channel OnReconnect:", time.Now().Unix())
-		go consume(channel, queue)
 	})
 
 	channel.OnClose(func(err *rabbitmq.Error) {
