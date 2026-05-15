@@ -230,11 +230,11 @@ func (c *Channel) Qos(prefetchCount int, prefetchSize int, global bool) error {
 	return c.channel.Qos(prefetchCount, prefetchSize, global)
 }
 
-//func (c *Channel) Cancel(consumer string, noWait bool) error {
-//	c.mu.Lock()
-//	defer c.mu.Unlock()
-//	return c.channel.Cancel(consumer, noWait)
-//}
+func (c *Channel) Cancel(consumer string, noWait bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.channel.Cancel(consumer, noWait)
+}
 
 // QueueDeclare
 //
@@ -330,6 +330,9 @@ func (c *Channel) Consume(queue, consumer string, autoAck, exclusive, noLocal, n
 					reader, _ = currentChannel.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
 				case msg, ok := <-reader:
 					if !ok {
+						// 这里通过 channel 的 close 状态来判断是 close 还是 cancel
+						// IsClosed 方法返回 true 表示 close，这时候需要进行重连
+						// IsClosed 方法返回 false 表示 cancel，这时候不需要进行重连，直接返回即可
 						var channelClosed = currentChannel.IsClosed()
 						if !channelClosed {
 							return

@@ -60,6 +60,10 @@ func main() {
 
 	go consume(channel, queue)
 
+	time.AfterFunc(time.Second*5, func() {
+		channel.Cancel("simple-consumer", true)
+	})
+
 	select {}
 }
 
