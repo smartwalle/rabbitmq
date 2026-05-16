@@ -38,7 +38,8 @@ func main() {
 	for {
 		i++
 		err = channel.Publish("", queue.Name, false, false, rabbitmq.Publishing{
-			Body: []byte(fmt.Sprintf("hello %d", i)),
+			DeliveryMode: rabbitmq.Persistent,
+			Body:         []byte(fmt.Sprintf("hello %d", i)),
 		})
 		if err != nil {
 			fmt.Printf("发送消息 %d 发生错误: %v \n", i, err)
