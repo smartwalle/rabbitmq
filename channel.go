@@ -76,7 +76,6 @@ func (c *Channel) Close() error {
 
 	c.closeOnce.Do(func() {
 		close(c.closed)
-		close(c.reconnected)
 	})
 	c.reconnectOptions = nil
 
@@ -188,10 +187,9 @@ func (c *Channel) reconnect(interval time.Duration) {
 				opt(c.channel)
 			}
 		}
-		c.mu.Unlock()
-
 		close(c.reconnected)
 		c.reconnected = make(chan struct{})
+		c.mu.Unlock()
 
 		if handler := c.reconnectHandle.Load(); handler != nil {
 			handler.(func(*Channel))(c)
@@ -356,10 +354,14 @@ func (c *Channel) Consume(queue, consumer string, autoAck, exclusive, noLocal, n
 			case <-c.closed:
 				return
 			default:
+				c.mu.Lock()
+				reconnected := c.reconnected
+				c.mu.Unlock()
+
 				select {
 				case <-c.closed:
 					return
-				case <-c.reconnected:
+				case <-reconnected:
 					c.mu.Lock()
 					currentChannel = c.channel
 					c.mu.Unlock()
