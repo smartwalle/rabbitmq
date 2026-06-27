@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -24,11 +25,11 @@ type Connection struct {
 
 	reconnectOptions map[int]reconnectOption
 
-	reconnectHandler func(*Connection)
-	closeHandler     func(*Error)
-	blockHandler     func(Blocking)
+	reconnectHandler atomic.Value
+	closeHandler     atomic.Value
+	blockHandler     atomic.Value
 
-	blocked bool
+	blocked uint32
 }
 
 type reconnectOption func(conn *amqp.Connection)
@@ -100,7 +101,7 @@ func (c *Connection) IsClosed() bool {
 }
 
 func (c *Connection) Blocked() bool {
-	return c.blocked
+	return atomic.LoadUint32(&c.blocked) == 1
 }
 
 func (c *Connection) handleNotify() {
@@ -109,16 +110,20 @@ func (c *Connection) handleNotify() {
 
 	select {
 	case err := <-closes:
-		if c.closeHandler != nil {
-			c.closeHandler(err)
+		if handler := c.closeHandler.Load(); handler != nil {
+			handler.(func(*Error))(err)
 		}
 		if err != nil {
 			c.reconnect(c.config.ReconnectInterval)
 		}
 	case block := <-blocks:
-		c.blocked = block.Active
-		if c.blockHandler != nil {
-			c.blockHandler(block)
+		if block.Active {
+			atomic.StoreUint32(&c.blocked, 1)
+		} else {
+			atomic.StoreUint32(&c.blocked, 0)
+		}
+		if handler := c.blockHandler.Load(); handler != nil {
+			handler.(func(Blocking))(block)
 		}
 	}
 }
@@ -132,7 +137,7 @@ func (c *Connection) connect() error {
 		_ = c.conn.Close()
 	}
 	c.conn = conn
-	c.blocked = false
+	atomic.StoreUint32(&c.blocked, 0)
 
 	go c.handleNotify()
 
@@ -162,8 +167,8 @@ func (c *Connection) reconnect(interval time.Duration) {
 		}
 		c.mu.Unlock()
 
-		if c.reconnectHandler != nil {
-			c.reconnectHandler(c)
+		if handler := c.reconnectHandler.Load(); handler != nil {
+			handler.(func(*Connection))(c)
 		}
 		return
 	}
@@ -186,11 +191,17 @@ func (c *Connection) addReconnectOptions(key int, fn reconnectOption) {
 }
 
 func (c *Connection) OnReconnect(handler func(conn *Connection)) {
-	c.reconnectHandler = handler
+	if handler == nil {
+		return
+	}
+	c.reconnectHandler.Store(handler)
 }
 
 func (c *Connection) OnClose(handler func(err *Error)) {
-	c.closeHandler = handler
+	if handler == nil {
+		return
+	}
+	c.closeHandler.Store(handler)
 }
 
 func (c *Connection) Channel() (*Channel, error) {

@@ -3,6 +3,7 @@ package rabbitmq
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -26,15 +27,15 @@ type Channel struct {
 
 	reconnectOptions map[int]channelReconnectOption
 
-	reconnectHandle func(*Channel)
-	closeHandler    func(*Error)
-	cancelHandler   func(string)
+	reconnectHandle atomic.Value
+	closeHandler    atomic.Value
+	cancelHandler   atomic.Value
 
-	flowHandler    func(bool)
-	returnHandler  func(Return)
-	publishHandler func(Confirmation)
+	flowHandler    atomic.Value
+	returnHandler  atomic.Value
+	publishHandler atomic.Value
 
-	overflowed bool
+	overflowed uint32
 }
 
 type channelReconnectOption func(channel *amqp.Channel)
@@ -89,7 +90,7 @@ func (c *Channel) IsClosed() bool {
 }
 
 func (c *Channel) Overflowed() bool {
-	return c.overflowed
+	return atomic.LoadUint32(&c.overflowed) == 1
 }
 
 func (c *Channel) connect() error {
@@ -101,7 +102,7 @@ func (c *Channel) connect() error {
 		_ = c.channel.Close()
 	}
 	c.channel = channel
-	c.overflowed = false
+	atomic.StoreUint32(&c.overflowed, 0)
 
 	go c.handleNotify()
 
@@ -118,31 +119,35 @@ func (c *Channel) handleNotify() {
 	for {
 		select {
 		case err := <-closes:
-			if c.closeHandler != nil {
-				c.closeHandler(err)
+			if handler := c.closeHandler.Load(); handler != nil {
+				handler.(func(*Error))(err)
 			}
 			if err != nil {
 				c.reconnect(c.reconnectInterval)
 			}
 			return
 		case value := <-cancels:
-			if c.cancelHandler != nil {
-				c.cancelHandler(value)
+			if handler := c.cancelHandler.Load(); handler != nil {
+				handler.(func(string))(value)
 			}
 			c.reconnect(c.reconnectInterval)
 			return
 		case value := <-flows:
-			c.overflowed = value
-			if c.flowHandler != nil {
-				c.flowHandler(value)
+			if value {
+				atomic.StoreUint32(&c.overflowed, 1)
+			} else {
+				atomic.StoreUint32(&c.overflowed, 0)
+			}
+			if handler := c.flowHandler.Load(); handler != nil {
+				handler.(func(bool))(value)
 			}
 		case value := <-confirms:
-			if c.publishHandler != nil {
-				c.publishHandler(value)
+			if handler := c.publishHandler.Load(); handler != nil {
+				handler.(func(Confirmation))(value)
 			}
 		case value := <-returns:
-			if c.returnHandler != nil {
-				c.returnHandler(value)
+			if handler := c.returnHandler.Load(); handler != nil {
+				handler.(func(Return))(value)
 			}
 		}
 	}
@@ -174,8 +179,8 @@ func (c *Channel) reconnect(interval time.Duration) {
 		close(c.reconnected)
 		c.reconnected = make(chan struct{})
 
-		if c.reconnectHandle != nil {
-			c.reconnectHandle(c)
+		if handler := c.reconnectHandle.Load(); handler != nil {
+			handler.(func(*Channel))(c)
 		}
 		return
 	}
@@ -198,27 +203,45 @@ func (c *Channel) addReconnectOptions(key int, fn channelReconnectOption) {
 }
 
 func (c *Channel) OnReconnect(handler func(channel *Channel)) {
-	c.reconnectHandle = handler
+	if handler == nil {
+		return
+	}
+	c.reconnectHandle.Store(handler)
 }
 
 func (c *Channel) OnClose(handler func(err *Error)) {
-	c.closeHandler = handler
+	if handler == nil {
+		return
+	}
+	c.closeHandler.Store(handler)
 }
 
 func (c *Channel) OnCancel(handler func(c string)) {
-	c.cancelHandler = handler
+	if handler == nil {
+		return
+	}
+	c.cancelHandler.Store(handler)
 }
 
 func (c *Channel) OnFlow(handler func(c bool)) {
-	c.flowHandler = handler
+	if handler == nil {
+		return
+	}
+	c.flowHandler.Store(handler)
 }
 
 func (c *Channel) OnReturn(handler func(r Return)) {
-	c.returnHandler = handler
+	if handler == nil {
+		return
+	}
+	c.returnHandler.Store(handler)
 }
 
 func (c *Channel) OnPublish(handler func(c Confirmation)) {
-	c.publishHandler = handler
+	if handler == nil {
+		return
+	}
+	c.publishHandler.Store(handler)
 }
 
 func (c *Channel) Qos(prefetchCount int, prefetchSize int, global bool) error {
