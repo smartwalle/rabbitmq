@@ -104,26 +104,33 @@ func (c *Connection) Blocked() bool {
 	return atomic.LoadUint32(&c.blocked) == 1
 }
 
-func (c *Connection) handleNotify() {
-	var closes = c.conn.NotifyClose(make(chan *Error, 1))
-	var blocks = c.conn.NotifyBlocked(make(chan Blocking, 1))
+func (c *Connection) handleNotify(conn *amqp.Connection) {
+	var closes = conn.NotifyClose(make(chan *Error, 1))
+	var blocks = conn.NotifyBlocked(make(chan Blocking, 1))
 
-	select {
-	case err := <-closes:
-		if handler := c.closeHandler.Load(); handler != nil {
-			handler.(func(*Error))(err)
-		}
-		if err != nil {
-			c.reconnect(c.config.ReconnectInterval)
-		}
-	case block := <-blocks:
-		if block.Active {
-			atomic.StoreUint32(&c.blocked, 1)
-		} else {
-			atomic.StoreUint32(&c.blocked, 0)
-		}
-		if handler := c.blockHandler.Load(); handler != nil {
-			handler.(func(Blocking))(block)
+	for {
+		select {
+		case err, ok := <-closes:
+			if handler := c.closeHandler.Load(); handler != nil {
+				handler.(func(*Error))(err)
+			}
+			if ok && err != nil {
+				c.reconnect(c.config.ReconnectInterval)
+			}
+			return
+		case block, ok := <-blocks:
+			if !ok {
+				blocks = nil
+				continue
+			}
+			if block.Active {
+				atomic.StoreUint32(&c.blocked, 1)
+			} else {
+				atomic.StoreUint32(&c.blocked, 0)
+			}
+			if handler := c.blockHandler.Load(); handler != nil {
+				handler.(func(Blocking))(block)
+			}
 		}
 	}
 }
@@ -139,7 +146,7 @@ func (c *Connection) connect() error {
 	c.conn = conn
 	atomic.StoreUint32(&c.blocked, 0)
 
-	go c.handleNotify()
+	go c.handleNotify(conn)
 
 	return nil
 }

@@ -104,35 +104,41 @@ func (c *Channel) connect() error {
 	c.channel = channel
 	atomic.StoreUint32(&c.overflowed, 0)
 
-	go c.handleNotify()
+	go c.handleNotify(channel)
 
 	return nil
 }
 
-func (c *Channel) handleNotify() {
-	var closes = c.channel.NotifyClose(make(chan *Error, 1))
-	var cancels = c.channel.NotifyCancel(make(chan string, 1))
-	var flows = c.channel.NotifyFlow(make(chan bool, 1))
-	var confirms = c.channel.NotifyPublish(make(chan Confirmation, 1))
-	var returns = c.channel.NotifyReturn(make(chan Return, 1))
+func (c *Channel) handleNotify(channel *amqp.Channel) {
+	var closes = channel.NotifyClose(make(chan *Error, 1))
+	var cancels = channel.NotifyCancel(make(chan string, 1))
+	var flows = channel.NotifyFlow(make(chan bool, 1))
+	var confirms = channel.NotifyPublish(make(chan Confirmation, 1))
+	var returns = channel.NotifyReturn(make(chan Return, 1))
 
 	for {
 		select {
-		case err := <-closes:
+		case err, ok := <-closes:
 			if handler := c.closeHandler.Load(); handler != nil {
 				handler.(func(*Error))(err)
 			}
-			if err != nil {
+			if ok && err != nil {
 				c.reconnect(c.reconnectInterval)
 			}
 			return
-		case value := <-cancels:
+		case value, ok := <-cancels:
+			if !ok {
+				cancels = nil
+				continue
+			}
 			if handler := c.cancelHandler.Load(); handler != nil {
 				handler.(func(string))(value)
 			}
-			c.reconnect(c.reconnectInterval)
-			return
-		case value := <-flows:
+		case value, ok := <-flows:
+			if !ok {
+				flows = nil
+				continue
+			}
 			if value {
 				atomic.StoreUint32(&c.overflowed, 1)
 			} else {
@@ -141,11 +147,19 @@ func (c *Channel) handleNotify() {
 			if handler := c.flowHandler.Load(); handler != nil {
 				handler.(func(bool))(value)
 			}
-		case value := <-confirms:
+		case value, ok := <-confirms:
+			if !ok {
+				confirms = nil
+				continue
+			}
 			if handler := c.publishHandler.Load(); handler != nil {
 				handler.(func(Confirmation))(value)
 			}
-		case value := <-returns:
+		case value, ok := <-returns:
+			if !ok {
+				returns = nil
+				continue
+			}
 			if handler := c.returnHandler.Load(); handler != nil {
 				handler.(func(Return))(value)
 			}
