@@ -1,501 +1,233 @@
 package rabbitmq
 
-import (
-	"context"
-	"sync"
-	"sync/atomic"
-	"time"
+import amqp "github.com/rabbitmq/amqp091-go"
 
-	amqp "github.com/rabbitmq/amqp091-go"
-)
+type Channel interface {
+	// Qos 设置当前 Channel 的 prefetch 限制。
+	//
+	// prefetchCount - 未 ack 消息数量限制
+	//
+	// prefetchSize - 未 ack 消息大小限制
+	//
+	// global - 是否应用到当前 Channel 上的所有 consumer
+	Qos(prefetchCount, prefetchSize int, global bool) error
 
-const (
-	optChannelFlow    = 1
-	optChannelConfirm = 2
-	optChannelQos     = 3
-)
+	// ExchangeDeclare 声明 exchange。
+	//
+	// name - exchange 名称
+	//
+	// kind - exchange 类型
+	//
+	// durable - 是否持久化
+	//
+	// autoDelete - 是否自动删除
+	//
+	// internal - 是否为内部 exchange
+	//
+	// noWait - 是否不等待服务端确认
+	//
+	// args - 其它参数
+	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args Table) error
 
-type Channel struct {
-	mu                sync.Mutex
-	conn              *Connection
-	channel           *amqp.Channel
-	reconnectInterval time.Duration
+	// ExchangeDeclarePassive 被动声明 exchange，用于检查 exchange 是否存在。
+	//
+	// name - exchange 名称
+	//
+	// kind - exchange 类型
+	//
+	// durable - 是否持久化
+	//
+	// autoDelete - 是否自动删除
+	//
+	// internal - 是否为内部 exchange
+	//
+	// noWait - 是否不等待服务端确认
+	//
+	// args - 其它参数
+	ExchangeDeclarePassive(name, kind string, durable, autoDelete, internal, noWait bool, args Table) error
 
-	closed      chan struct{}
-	closeOnce   sync.Once
-	reconnected chan struct{}
+	// ExchangeDelete 删除 exchange。
+	//
+	// name - exchange 名称
+	//
+	// ifUnused - 是否仅在未使用时删除
+	//
+	// noWait - 是否不等待服务端确认
+	ExchangeDelete(name string, ifUnused, noWait bool) error
 
-	reconnectOptions map[int]channelReconnectOption
+	// ExchangeBind 绑定两个 exchange。
+	//
+	// destination - 目标 exchange 名称
+	//
+	// key - routing key
+	//
+	// source - 来源 exchange 名称
+	//
+	// noWait - 是否不等待服务端确认
+	//
+	// args - 其它参数
+	ExchangeBind(destination, key, source string, noWait bool, args Table) error
 
-	reconnectHandle atomic.Value
-	closeHandler    atomic.Value
-	cancelHandler   atomic.Value
+	// ExchangeUnbind 解绑两个 exchange。
+	//
+	// destination - 目标 exchange 名称
+	//
+	// key - routing key
+	//
+	// source - 来源 exchange 名称
+	//
+	// noWait - 是否不等待服务端确认
+	//
+	// args - 其它参数
+	ExchangeUnbind(destination, key, source string, noWait bool, args Table) error
 
-	flowHandler    atomic.Value
-	returnHandler  atomic.Value
-	publishHandler atomic.Value
+	// QueueDeclare 声明 queue。
+	//
+	// name - 队列名称
+	// 第一版不支持匿名队列，name 为空时返回 ErrAnonymousQueue。
+	//
+	// durable - 是否持久化
+	//
+	// autoDelete - 是否自动删除
+	//
+	// exclusive - 是否独占
+	//
+	// noWait - 是否阻塞
+	//
+	// args - 其它参数
+	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args Table) (Queue, error)
 
-	overflowed uint32
+	// QueueDeclarePassive 被动声明 queue，用于检查 queue 是否存在。
+	//
+	// name - 队列名称
+	// 第一版不支持匿名队列，name 为空时返回 ErrAnonymousQueue。
+	//
+	// durable - 是否持久化
+	//
+	// autoDelete - 是否自动删除
+	//
+	// exclusive - 是否独占
+	//
+	// noWait - 是否不等待服务端确认
+	//
+	// args - 其它参数
+	QueueDeclarePassive(name string, durable, autoDelete, exclusive, noWait bool, args Table) (Queue, error)
+
+	// QueueBind 绑定 queue 到 exchange。
+	//
+	// name - 队列名称
+	//
+	// key - routing key
+	//
+	// exchange - exchange 名称
+	//
+	// noWait - 是否不等待服务端确认
+	//
+	// args - 其它参数
+	QueueBind(name, key, exchange string, noWait bool, args Table) error
+
+	// QueueUnbind 解绑 queue 和 exchange。
+	//
+	// name - 队列名称
+	//
+	// key - routing key
+	//
+	// exchange - exchange 名称
+	//
+	// args - 其它参数
+	QueueUnbind(name, key, exchange string, args Table) error
+
+	// QueueDelete 删除 queue。
+	//
+	// name - 队列名称
+	//
+	// ifUnused - 是否仅在未使用时删除
+	//
+	// ifEmpty - 是否仅在为空时删除
+	//
+	// noWait - 是否不等待服务端确认
+	QueueDelete(name string, ifUnused, ifEmpty, noWait bool) (int, error)
+
+	// QueuePurge 清空 queue 中的消息。
+	//
+	// name - 队列名称
+	//
+	// noWait - 是否不等待服务端确认
+	QueuePurge(name string, noWait bool) (int, error)
+
+	// Close 关闭当前 Channel。
+	//
+	// 只有显式通过 Conn.Channel() 获取并由调用方持有的 Channel 才应由调用方关闭。
+	// Producer.Channel() 和 Consumer.Channel() 返回的 Channel 由包装层管理，业务不能主动调用 Close。
+	Close() error
 }
 
-type channelReconnectOption func(channel *amqp.Channel)
+type channel struct {
+	*amqp.Channel
+	closable bool
+}
 
-func withConfirm(noWait bool) channelReconnectOption {
-	return func(channel *amqp.Channel) {
-		_ = channel.Confirm(noWait)
+func (c *channel) Qos(prefetchCount, prefetchSize int, global bool) error {
+	return c.Channel.Qos(prefetchCount, prefetchSize, global)
+}
+
+func (c *channel) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args Table) error {
+	return c.Channel.ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args)
+}
+
+func (c *channel) ExchangeDeclarePassive(name, kind string, durable, autoDelete, internal, noWait bool, args Table) error {
+	return c.Channel.ExchangeDeclarePassive(name, kind, durable, autoDelete, internal, noWait, args)
+}
+
+func (c *channel) ExchangeDelete(name string, ifUnused, noWait bool) error {
+	return c.Channel.ExchangeDelete(name, ifUnused, noWait)
+}
+
+func (c *channel) ExchangeBind(destination, key, source string, noWait bool, args Table) error {
+	return c.Channel.ExchangeBind(destination, key, source, noWait, args)
+}
+
+func (c *channel) ExchangeUnbind(destination, key, source string, noWait bool, args Table) error {
+	return c.Channel.ExchangeUnbind(destination, key, source, noWait, args)
+}
+
+func (c *channel) QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args Table) (Queue, error) {
+	if name == "" {
+		return Queue{}, ErrAnonymousQueue
 	}
+	return c.Channel.QueueDeclare(name, durable, autoDelete, exclusive, noWait, args)
 }
 
-func withFlow(active bool) channelReconnectOption {
-	return func(channel *amqp.Channel) {
-		_ = channel.Flow(active)
+func (c *channel) QueueDeclarePassive(name string, durable, autoDelete, exclusive, noWait bool, args Table) (Queue, error) {
+	if name == "" {
+		return Queue{}, ErrAnonymousQueue
 	}
+	return c.Channel.QueueDeclarePassive(name, durable, autoDelete, exclusive, noWait, args)
 }
 
-func withQos(prefetchCount int, prefetchSize int, global bool) channelReconnectOption {
-	return func(channel *amqp.Channel) {
-		_ = channel.Qos(prefetchCount, prefetchSize, global)
+func (c *channel) QueueBind(name, key, exchange string, noWait bool, args Table) error {
+	return c.Channel.QueueBind(name, key, exchange, noWait, args)
+}
+
+func (c *channel) QueueUnbind(name, key, exchange string, args Table) error {
+	return c.Channel.QueueUnbind(name, key, exchange, args)
+}
+
+func (c *channel) QueueDelete(name string, ifUnused, ifEmpty, noWait bool) (int, error) {
+	return c.Channel.QueueDelete(name, ifUnused, ifEmpty, noWait)
+}
+
+func (c *channel) QueuePurge(name string, noWait bool) (int, error) {
+	return c.Channel.QueuePurge(name, noWait)
+}
+
+func (c *channel) Close() error {
+	if !c.closable {
+		return ErrChannelCloseForbidden
 	}
+	return c.close()
 }
 
-func newChannel(conn *Connection, reconnectInterval time.Duration) (*Channel, error) {
-	var nChannel = &Channel{}
-	nChannel.conn = conn
-	nChannel.closed = make(chan struct{})
-	nChannel.reconnectInterval = reconnectInterval
-	nChannel.reconnected = make(chan struct{})
-	if err := nChannel.connect(); err != nil {
-		return nil, err
-	}
-	return nChannel, nil
-}
-
-func (c *Channel) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.closeOnce.Do(func() {
-		close(c.closed)
-	})
-	c.reconnectOptions = nil
-
-	return c.channel.Close()
-}
-
-func (c *Channel) IsClosed() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.IsClosed()
-}
-
-func (c *Channel) Overflowed() bool {
-	return atomic.LoadUint32(&c.overflowed) == 1
-}
-
-func (c *Channel) connect() error {
-	var channel, err = c.conn.conn.Channel()
-	if err != nil {
-		return err
-	}
-	if c.channel != nil {
-		_ = c.channel.Close()
-	}
-	c.channel = channel
-	atomic.StoreUint32(&c.overflowed, 0)
-
-	go c.handleNotify(channel)
-
-	return nil
-}
-
-func (c *Channel) handleNotify(channel *amqp.Channel) {
-	var closes = channel.NotifyClose(make(chan *Error, 1))
-	var cancels = channel.NotifyCancel(make(chan string, 1))
-	var flows = channel.NotifyFlow(make(chan bool, 1))
-	var confirms = channel.NotifyPublish(make(chan Confirmation, 1))
-	var returns = channel.NotifyReturn(make(chan Return, 1))
-
-	for {
-		select {
-		case err, ok := <-closes:
-			if handler := c.closeHandler.Load(); handler != nil {
-				handler.(func(*Error))(err)
-			}
-			if ok && err != nil {
-				c.reconnect(c.reconnectInterval)
-			}
-			return
-		case value, ok := <-cancels:
-			if !ok {
-				cancels = nil
-				continue
-			}
-			if handler := c.cancelHandler.Load(); handler != nil {
-				handler.(func(string))(value)
-			}
-		case value, ok := <-flows:
-			if !ok {
-				flows = nil
-				continue
-			}
-			if value {
-				atomic.StoreUint32(&c.overflowed, 1)
-			} else {
-				atomic.StoreUint32(&c.overflowed, 0)
-			}
-			if handler := c.flowHandler.Load(); handler != nil {
-				handler.(func(bool))(value)
-			}
-		case value, ok := <-confirms:
-			if !ok {
-				confirms = nil
-				continue
-			}
-			if handler := c.publishHandler.Load(); handler != nil {
-				handler.(func(Confirmation))(value)
-			}
-		case value, ok := <-returns:
-			if !ok {
-				returns = nil
-				continue
-			}
-			if handler := c.returnHandler.Load(); handler != nil {
-				handler.(func(Return))(value)
-			}
-		}
-	}
-}
-
-func (c *Channel) reconnect(interval time.Duration) {
-	c.mu.Lock()
-
-	for {
-		select {
-		case <-time.After(interval):
-		case <-c.closed:
-			c.mu.Unlock()
-			return
-		}
-
-		var err = c.connect()
-		if err != nil {
-			continue
-		}
-
-		for _, opt := range c.reconnectOptions {
-			if opt != nil {
-				opt(c.channel)
-			}
-		}
-		close(c.reconnected)
-		c.reconnected = make(chan struct{})
-		c.mu.Unlock()
-
-		if handler := c.reconnectHandle.Load(); handler != nil {
-			handler.(func(*Channel))(c)
-		}
-		return
-	}
-}
-
-func (c *Channel) addReconnectOptions(key int, fn channelReconnectOption) {
-	if fn == nil {
-		return
-	}
-	select {
-	case <-c.closed:
-		return
-	default:
-	}
-
-	if c.reconnectOptions == nil {
-		c.reconnectOptions = make(map[int]channelReconnectOption)
-	}
-	c.reconnectOptions[key] = fn
-}
-
-func (c *Channel) OnReconnect(handler func(channel *Channel)) {
-	if handler == nil {
-		return
-	}
-	c.reconnectHandle.Store(handler)
-}
-
-func (c *Channel) OnClose(handler func(err *Error)) {
-	if handler == nil {
-		return
-	}
-	c.closeHandler.Store(handler)
-}
-
-func (c *Channel) OnCancel(handler func(c string)) {
-	if handler == nil {
-		return
-	}
-	c.cancelHandler.Store(handler)
-}
-
-func (c *Channel) OnFlow(handler func(c bool)) {
-	if handler == nil {
-		return
-	}
-	c.flowHandler.Store(handler)
-}
-
-func (c *Channel) OnReturn(handler func(r Return)) {
-	if handler == nil {
-		return
-	}
-	c.returnHandler.Store(handler)
-}
-
-func (c *Channel) OnPublish(handler func(c Confirmation)) {
-	if handler == nil {
-		return
-	}
-	c.publishHandler.Store(handler)
-}
-
-func (c *Channel) Qos(prefetchCount int, prefetchSize int, global bool) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.addReconnectOptions(optChannelQos, withQos(prefetchCount, prefetchSize, global))
-
-	return c.channel.Qos(prefetchCount, prefetchSize, global)
-}
-
-func (c *Channel) Cancel(consumer string, noWait bool) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.Cancel(consumer, noWait)
-}
-
-// QueueDeclare
-//
-// name - 队列名称
-//
-// durable - 是否持久化
-//
-// autoDelete - 是否自动删除
-//
-// exclusive - 是否独占
-//
-// noWait - 是否阻塞
-//
-// args - 其它参数
-func (c *Channel) QueueDeclare(name string, durable bool, autoDelete bool, exclusive bool, noWait bool, args Table) (Queue, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.QueueDeclare(name, durable, autoDelete, exclusive, noWait, args)
-}
-
-func (c *Channel) QueueDeclarePassive(name string, durable bool, autoDelete bool, exclusive bool, noWait bool, args Table) (Queue, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.QueueDeclarePassive(name, durable, autoDelete, exclusive, noWait, args)
-}
-
-func (c *Channel) QueueBind(name string, key string, exchange string, noWait bool, args Table) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.QueueBind(name, key, exchange, noWait, args)
-}
-
-func (c *Channel) QueueUnbind(name, key, exchange string, args Table) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.QueueUnbind(name, key, exchange, args)
-}
-
-func (c *Channel) QueuePurge(name string, noWait bool) (int, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.QueuePurge(name, noWait)
-}
-
-func (c *Channel) QueueDelete(name string, ifUnused, ifEmpty, noWait bool) (int, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.QueueDelete(name, ifUnused, ifEmpty, noWait)
-}
-
-// Consume
-//
-// queue - 队列名称
-//
-// consumer - 消费者名称
-//
-// autoAck - 是否自动应答
-//
-// exclusive - 是否独占
-//
-// noLocal - 设置为 true，表示不能将同一个 Connection 中生产者发送的消息传递给这个 Connection 中的消费者
-//
-// noWait - 是否阻塞
-//
-// args - 其它参数
-func (c *Channel) Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args Table) (<-chan Delivery, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	var currentChannel = c.channel
-
-	var reader, err = currentChannel.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
-	if err != nil {
-		return reader, err
-	}
-
-	var writer = make(chan Delivery)
-
-	go func() {
-		defer close(writer)
-		for {
-			select {
-			case <-c.closed:
-				return
-			default:
-				c.mu.Lock()
-				reconnected := c.reconnected
-				c.mu.Unlock()
-
-				select {
-				case <-c.closed:
-					return
-				case <-reconnected:
-					c.mu.Lock()
-					currentChannel = c.channel
-					c.mu.Unlock()
-
-					reader, _ = currentChannel.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
-				case msg, ok := <-reader:
-					if !ok {
-						// 这里通过 channel 的 close 状态来判断是 close 还是 cancel
-						// IsClosed 方法返回 true 表示 close，这时候需要进行重连
-						// IsClosed 方法返回 false 表示 cancel，这时候不需要进行重连，直接返回即可
-						var channelClosed = currentChannel.IsClosed()
-						if !channelClosed {
-							return
-						}
-						reader = make(<-chan Delivery)
-						continue
-					}
-					writer <- msg
-				}
-			}
-		}
-	}()
-	return writer, nil
-}
-
-func (c *Channel) ExchangeDeclare(name string, kind string, durable bool, autoDelete bool, internal bool, noWait bool, args Table) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args)
-}
-
-func (c *Channel) ExchangeDeclarePassive(name string, kind string, durable bool, autoDelete bool, internal bool, noWait bool, args Table) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.ExchangeDeclarePassive(name, kind, durable, autoDelete, internal, noWait, args)
-}
-
-func (c *Channel) ExchangeDelete(name string, ifUnused, noWait bool) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.ExchangeDelete(name, ifUnused, noWait)
-}
-
-func (c *Channel) ExchangeBind(destination, key, source string, noWait bool, args Table) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.ExchangeBind(destination, key, source, noWait, args)
-}
-
-func (c *Channel) ExchangeUnbind(destination, key, source string, noWait bool, args Table) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.ExchangeUnbind(destination, key, source, noWait, args)
-}
-
-// Publish
-//
-// exchange - 交换机名称
-//
-// key - Key
-//
-// mandatory - 如果为 true，根据自身 exchange 类型和 route key 规则无法找到符合条件的队列会把消息返还给发送者
-//
-// immediate - 如果为 true，当 exchange 发送消息到队列后发现队列上没有消费者，则会把消息返还给发送者，在 RabbitMQ 3.0以后的版本里，去掉了immediate参数的支持
-//
-// msg - 消息内容
-func (c *Channel) Publish(exchange string, key string, mandatory bool, immediate bool, msg Publishing) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.PublishWithContext(context.Background(), exchange, key, mandatory, immediate, msg)
-}
-
-func (c *Channel) PublishWithContext(ctx context.Context, exchange string, key string, mandatory bool, immediate bool, msg Publishing) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.PublishWithContext(ctx, exchange, key, mandatory, immediate, msg)
-}
-
-func (c *Channel) PublishWithDeferredConfirm(exchange, key string, mandatory, immediate bool, msg Publishing) (*DeferredConfirmation, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.PublishWithDeferredConfirmWithContext(context.Background(), exchange, key, mandatory, immediate, msg)
-}
-
-func (c *Channel) PublishWithDeferredConfirmWithContext(ctx context.Context, exchange string, key string, mandatory bool, immediate bool, msg Publishing) (*DeferredConfirmation, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.PublishWithDeferredConfirmWithContext(ctx, exchange, key, mandatory, immediate, msg)
-}
-
-func (c *Channel) Get(queue string, autoAck bool) (msg Delivery, ok bool, err error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.Get(queue, autoAck)
-}
-
-func (c *Channel) Flow(active bool) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.addReconnectOptions(optChannelFlow, withFlow(active))
-
-	return c.channel.Flow(active)
-}
-
-func (c *Channel) Confirm(noWait bool) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.addReconnectOptions(optChannelConfirm, withConfirm(noWait))
-
-	return c.channel.Confirm(noWait)
-}
-
-func (c *Channel) Ack(tag uint64, multiple bool) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.Ack(tag, multiple)
-}
-
-func (c *Channel) Nack(tag uint64, multiple bool, requeue bool) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.Nack(tag, multiple, requeue)
-}
-
-func (c *Channel) Reject(tag uint64, requeue bool) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.Reject(tag, requeue)
-}
-
-func (c *Channel) GetNextPublishSeqNo() uint64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.channel.GetNextPublishSeqNo()
+func (c *channel) close() error {
+	return c.Channel.Close()
 }

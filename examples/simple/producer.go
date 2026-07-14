@@ -1,54 +1,72 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/smartwalle/rabbitmq"
 	"github.com/smartwalle/rabbitmq/examples"
 )
 
 func main() {
-	log.SetFlags(log.Lshortfile | log.LstdFlags)
-
-	conn, err := rabbitmq.NewConn(examples.URL, rabbitmq.Config{})
+	conn, err := rabbitmq.New(examples.URL, rabbitmq.Config{
+		Recovery: &rabbitmq.Recovery{
+			ReconnectionConfig: &rabbitmq.ReconnectionConfig{
+				MaxRetryCount: 100,
+				RetryInterval: time.Second,
+				RecoverableErrorCodes: []int{
+					rabbitmq.ContentTooLarge,
+					rabbitmq.NoRoute,
+					rabbitmq.NoConsumers,
+					rabbitmq.ConnectionForced,
+					rabbitmq.InvalidPath,
+					rabbitmq.AccessRefused,
+					rabbitmq.NotFound,
+					rabbitmq.ResourceLocked,
+					rabbitmq.PreconditionFailed,
+					rabbitmq.FrameError,
+					rabbitmq.SyntaxError,
+					rabbitmq.CommandInvalid,
+					rabbitmq.ChannelError,
+					rabbitmq.UnexpectedFrame,
+					rabbitmq.ResourceError,
+					rabbitmq.NotAllowed,
+					rabbitmq.NotImplemented,
+					rabbitmq.InternalError,
+				},
+			},
+		},
+	})
 	if err != nil {
-		log.Println("连接 RabbitMQ 异常:", err)
-		return
+		log.Fatalln(err)
 	}
 	defer conn.Close()
-	log.Println("连接 RabbitMQ 成功")
 
-	channel, err := conn.Channel()
+	conn.OnStateChanged(func(state *rabbitmq.StateChanged) {
+		fmt.Println("Conn OnStateChanged", state.From, state.To, state.Err)
+	})
+
+	producer, err := conn.Producer(true)
 	if err != nil {
-		log.Println("创建 Channel 异常:", err)
-		return
+		log.Fatalln(err)
 	}
-	defer channel.Close()
-	log.Println("创建 Channel 成功")
+	//fmt.Println(producer.Channel().QueueDeclare("queue.Name", true, true, false, false, nil))
 
-	queue, err := channel.QueueDeclare("simple_queue", true, false, false, false, nil)
-	if err != nil {
-		log.Println("创建 Queue 异常:", err)
-		return
-	}
-	log.Println("创建 Queue 成功")
-
-	var i = 0
+	var idx = 0
 	for {
-		i++
-		err = channel.Publish("", queue.Name, false, false, rabbitmq.Publishing{
+		var nErr = producer.PublishWithContext(context.Background(), "xxx", "queue.Name", true, false, rabbitmq.Publishing{
 			DeliveryMode: rabbitmq.Persistent,
-			Body:         []byte(fmt.Sprintf("hello %d", i)),
+			Body:         []byte(fmt.Sprintf("hello %d", idx)),
 		})
-		if err != nil {
-			fmt.Printf("发送消息 %d 发生错误: %v \n", i, err)
-		} else {
-			fmt.Printf("发送消息 %d 成功 \n", i)
-		}
 
-		//time.Sleep(time.Second)
+		fmt.Println(idx, nErr)
+		time.Sleep(time.Millisecond * 100)
+		idx++
 	}
 
-	select {}
+	for {
+		time.Sleep(time.Second * 1)
+	}
 }
