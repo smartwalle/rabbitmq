@@ -56,7 +56,7 @@ func main() {
 
 	var idx = 0
 	for {
-		var nErr = producer.PublishWithContext(context.Background(), "xxx", "queue.Name", true, false, rabbitmq.Publishing{
+		var nErr = producer.PublishWithContext(context.Background(), "", "queue.Name", true, false, rabbitmq.Publishing{
 			DeliveryMode: rabbitmq.Persistent,
 			Body:         []byte(fmt.Sprintf("hello %d", idx)),
 		})

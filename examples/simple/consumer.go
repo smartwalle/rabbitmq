@@ -64,9 +64,6 @@ func main() {
 		fmt.Println("Consumer OnCancel", consumerTag)
 	})
 	fmt.Println(consumer.Start(context.Background()))
-	fmt.Println(consumer.Start(context.Background()))
-
-	time.Sleep(time.Second)
 
 	for {
 		time.Sleep(time.Second * 1)
